@@ -1,6 +1,10 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "host-base",
@@ -10,33 +14,102 @@
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "BUILD_TESTING": "ON",
-        "MINI_OS_WARNINGS_AS_ERRORS": "ON"
+        "MINI_OS_WARNINGS_AS_ERRORS": "ON",
+        "MINI_OS_BUILD_MODE": "host"
       }
     },
     {
       "name": "host-debug",
       "inherits": "host-base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     },
     {
       "name": "host-release",
       "inherits": "host-base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     },
     {
       "name": "host-sanitize",
       "inherits": "host-debug",
-      "cacheVariables": { "MINI_OS_SANITIZERS": "ON" }
+      "cacheVariables": {
+        "MINI_OS_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "kernel-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "MINI_OS_BUILD_MODE": "kernel",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/cmake/toolchains/aarch64-none-elf.cmake",
+        "BUILD_TESTING": "ON",
+        "MINI_OS_WARNINGS_AS_ERRORS": "ON",
+        "MINI_OS_SANITIZERS": "OFF"
+      }
+    },
+    {
+      "name": "kernel-debug",
+      "inherits": "kernel-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "kernel-release",
+      "inherits": "kernel-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "host-debug", "configurePreset": "host-debug" },
-    { "name": "host-release", "configurePreset": "host-release" },
-    { "name": "host-sanitize", "configurePreset": "host-sanitize" }
+    {
+      "name": "host-debug",
+      "configurePreset": "host-debug"
+    },
+    {
+      "name": "host-release",
+      "configurePreset": "host-release"
+    },
+    {
+      "name": "host-sanitize",
+      "configurePreset": "host-sanitize"
+    },
+    {
+      "name": "kernel-debug",
+      "configurePreset": "kernel-debug"
+    },
+    {
+      "name": "kernel-release",
+      "configurePreset": "kernel-release"
+    }
   ],
   "testPresets": [
-    { "name": "host-debug", "configurePreset": "host-debug", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
-    { "name": "host-release", "configurePreset": "host-release", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    {
+      "name": "host-debug",
+      "configurePreset": "host-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "host-release",
+      "configurePreset": "host-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
     {
       "name": "host-sanitize",
       "configurePreset": "host-sanitize",
@@ -44,8 +117,32 @@
         "ASAN_OPTIONS": "halt_on_error=1",
         "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
       },
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error" }
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "kernel-debug",
+      "configurePreset": "kernel-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "kernel-release",
+      "configurePreset": "kernel-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
     }
   ]
 }
