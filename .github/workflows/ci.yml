@@ -1,0 +1,31 @@
+name: C and C++ checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang-18
+      CXX: clang++-18
+      VCPKG_DISABLE_METRICS: "1"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install LLVM and vcpkg prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 clang-format-18 clang-tidy-18 python3-venv curl zip unzip tar pkg-config
+          mkdir -p "$RUNNER_TEMP/llvm-bin"
+          for tool in clang clang++ clang-format clang-tidy; do
+            ln -s "$(command -v "$tool-18")" "$RUNNER_TEMP/llvm-bin/$tool"
+          done
+          echo "$RUNNER_TEMP/llvm-bin" >> "$GITHUB_PATH"
+      - name: Bootstrap build tools and vcpkg
+        run: ./scripts/setup.sh
+      - name: Formatting, static analysis, unit tests, and sanitizers
+        run: ./scripts/dev.sh check
