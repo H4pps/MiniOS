@@ -28,4 +28,26 @@ jobs:
       - name: Bootstrap build tools and vcpkg
         run: ./scripts/setup.sh
       - name: Formatting, static analysis, unit tests, and sanitizers
-        run: ./scripts/dev.sh check
+        run: ./scripts/dev.sh check-host
+
+  kernel:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install cross-compilation and emulator prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 llvm-18 clang-format-18 clang-tidy-18 qemu-system-arm python3-venv
+          echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
+      - name: Prepare local build tools (no hosted dependencies)
+        run: ./scripts/setup.sh --kernel
+      - name: Check source formatting
+        run: ./scripts/dev.sh format-check
+      - name: Analyze and verify debug kernel
+        run: |
+          ./scripts/dev.sh kernel-lint kernel-debug
+          ./scripts/dev.sh kernel-test kernel-debug
+      - name: Analyze and verify release kernel
+        run: |
+          ./scripts/dev.sh kernel-lint kernel-release
+          ./scripts/dev.sh kernel-test kernel-release
