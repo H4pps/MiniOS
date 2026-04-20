@@ -2,6 +2,14 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
+MODE="${1:-host}"
+[[ $# -le 1 ]] || fail "Usage: ./scripts/setup.sh [--kernel]"
+case "$MODE" in
+    host) ;;
+    --kernel) kernel_tools ;;
+    *) fail "Usage: ./scripts/setup.sh [--kernel]" ;;
+esac
+
 for tool in python3 git clang clang++ clang-format clang-tidy; do
     require_tool "$tool"
 done
@@ -10,6 +18,15 @@ if [[ ! -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
     python3 -m venv "$PROJECT_ROOT/.venv"
 fi
 "$PROJECT_ROOT/.venv/bin/python" -m pip install --disable-pip-version-check -r scripts/requirements.txt
+
+if [[ "$MODE" == --kernel ]]; then
+    # Syntax checks do not create an executable or require hosted libraries.
+    printf 'int probe(void) { return 0; }\n' | clang --target=aarch64-none-elf -ffreestanding -mgeneral-regs-only -x c -fsyntax-only -
+    printf 'extern "C" int probe() { return 0; }\n' | clang++ --target=aarch64-none-elf -ffreestanding -nostdinc++ -mgeneral-regs-only -x c++ -fsyntax-only -
+    qemu-system-aarch64 -machine help | python3 -c 'import sys; sys.exit(0 if any(line.startswith("virt-8.2 ") for line in sys.stdin) else "QEMU lacks virt-8.2; install QEMU 8.2 or newer.")'
+    printf '\nKernel setup complete. Run ./scripts/dev.sh kernel-test\n'
+    exit 0
+fi
 
 BASELINE="$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["builtin-baseline"])')"
 if [[ "$VCPKG_ROOT" == "$PROJECT_ROOT/.tools/vcpkg" ]]; then
@@ -31,4 +48,4 @@ if [[ ! -x "$VCPKG_ROOT/vcpkg" ]]; then
     "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 fi
 
-printf '\nSetup complete. Run ./scripts/dev.sh check\n'
+printf '\nSetup complete. Run ./scripts/dev.sh check-host\n'

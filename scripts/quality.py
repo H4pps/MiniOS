@@ -42,7 +42,9 @@ def main():
             if not path.is_absolute():
                 path = Path(entry["directory"]) / path
             path = path.resolve()
-            if any(folder in path.parents for folder in (ROOT / "src", ROOT / "tests", ROOT / "tools")):
+            if path.suffix in EXTENSIONS and any(
+                folder in path.parents for folder in (ROOT / "src", ROOT / "tests", ROOT / "tools")
+            ):
                 sources.add(path)
         if not sources:
             raise RuntimeError("No project translation units found in compilation database.")
