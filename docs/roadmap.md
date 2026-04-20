@@ -19,15 +19,21 @@ verification and relevant host tests; a successful build alone is insufficient.
 
 ## Kernel milestones
 
-Work through these milestones in order. The host foundation does not yet build
-or boot a kernel. **Next milestone: Boot + linker script.**
+Work through these milestones in order. The first kernel boot is verified locally
+in debug and release builds. **Next milestone: complete PL011 UART receive support.**
 
-- [ ] **Boot + linker script**
-  - [ ] Add the freestanding AArch64 build, boot entry, and linker script.
-  - [ ] Verify that the kernel reaches its entry point under QEMU `virt`.
+- [x] **Boot + linker script**
+  - [x] Separate host and freestanding AArch64 CMake builds and presets.
+  - [x] Add EL1 startup, BSS clearing, a platform linker layout, and a 64 KiB stack.
+  - [x] Inspect ELF architecture, entry address, load segments, and runtime dependencies.
+  - [x] Verify debug and release kernels print `mini-os: boot OK` under QEMU `virt-8.2`.
+  - [x] Check EL1, initialized data, zeroed BSS, and the alignment utility before confirmation.
+  - [x] Add bounded boot tests and verify runner failure handling and process cleanup.
 - [ ] **PL011 UART**
-  - [ ] Implement the driver using resources supplied by the platform layer.
-  - [ ] Verify serial output and input under QEMU.
+  - [x] Implement initialization and polling transmission using platform-supplied resources.
+  - [x] Verify 115200 baud, 8N1 serial output with platform CRLF conversion under QEMU.
+  - [ ] Implement receive support.
+  - [ ] Verify serial input under QEMU.
 - [ ] **Device Tree parser**
   - [ ] Parse the QEMU-provided device tree for platform resources.
   - [ ] Test malformed input on the host and verify discovery under QEMU.
@@ -68,6 +74,6 @@ or boot a kernel. **Next milestone: Boot + linker script.**
   - [ ] Expose kernel diagnostics and basic performance measurements.
   - [ ] Verify reports against controlled workloads under QEMU.
 - [ ] **CI**
-  - [ ] Add the freestanding kernel build to the existing host-check workflow.
-  - [ ] Automate QEMU boot and serial-output checks with timeouts.
-  - [ ] Verify the complete host and kernel workflow in GitHub Actions.
+  - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
+  - [x] Automate debug/release QEMU boot, ELF inspection, and serial-output checks with timeouts.
+  - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.
