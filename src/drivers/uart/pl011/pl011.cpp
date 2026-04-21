@@ -3,6 +3,7 @@
 namespace {
 enum class Register : uint8_t {
     data = 0x00,
+    error_clear = 0x04,
     flags = 0x18,
     integer_baud = 0x24,
     fractional_baud = 0x28,
@@ -36,11 +37,27 @@ bool initialize(const Config &config) {
     reg(config.base, Register::interrupt_mask) = 0;
     reg(config.base, Register::interrupt_clear) = 0x7ff;
     reg(config.base, Register::dma_control) = 0;
+    reg(config.base, Register::error_clear) = 0;
     reg(config.base, Register::integer_baud) = static_cast<uint32_t>(scaled_divisor / 64);
     reg(config.base, Register::fractional_baud) = static_cast<uint32_t>(scaled_divisor % 64);
     reg(config.base, Register::line_control) = (3U << 5) | (1U << 4); // 8N1, FIFO.
-    reg(config.base, Register::control) = (1U << 8) | 1U;             // TX enabled; RX deferred.
+    reg(config.base, Register::control) = (1U << 9) | (1U << 8) | 1U; // RX, TX, UART enabled.
     return true;
+}
+
+serial::ReadResult try_read(uintptr_t base) {
+    if ((reg(base, Register::flags) & (1U << 4)) != 0) {
+        return {serial::ReadStatus::empty, 0, 0};
+    }
+    // UARTDR associates bits 11:8 with this byte. A write to UARTECR
+    // clears all four receive error flags (Arm DDI 0183G, sections 3.3.1-2).
+    const uint32_t data = reg(base, Register::data);
+    const auto errors = static_cast<uint8_t>((data >> 8) & 0xfU);
+    if (errors != 0) {
+        reg(base, Register::error_clear) = 0;
+    }
+    return {errors == 0 ? serial::ReadStatus::byte : serial::ReadStatus::error,
+            static_cast<uint8_t>(data & 0xffU), errors};
 }
 
 void putc(uintptr_t base, char character) {

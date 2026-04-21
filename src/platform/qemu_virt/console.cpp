@@ -10,12 +10,18 @@ constexpr drivers::pl011::Config uart = {0x09000000, 24000000, 115200};
 namespace platform {
 bool initialize_early_console() { return drivers::pl011::initialize(uart); }
 
+serial::ReadResult early_read() { return drivers::pl011::try_read(uart.base); }
+
+void early_putc(char character) {
+    if (character == '\n') {
+        drivers::pl011::putc(uart.base, '\r');
+    }
+    drivers::pl011::putc(uart.base, character);
+}
+
 void early_write(const char *text) {
     for (; *text != '\0'; ++text) {
-        if (*text == '\n') {
-            drivers::pl011::putc(uart.base, '\r');
-        }
-        drivers::pl011::putc(uart.base, *text);
+        early_putc(*text);
     }
 }
 } // namespace platform

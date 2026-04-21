@@ -75,6 +75,10 @@ add_library(mini_os_core STATIC src/kernel/alignment.c)
 target_include_directories(mini_os_core PUBLIC include)
 target_link_libraries(mini_os_core PRIVATE mini_os_options)
 
+add_library(mini_os_pl011 STATIC src/drivers/uart/pl011/pl011.cpp)
+target_include_directories(mini_os_pl011 PUBLIC include)
+target_link_libraries(mini_os_pl011 PRIVATE mini_os_options)
+
 include(CTest)
 if(MINI_OS_BUILD_MODE STREQUAL "host")
   include(cmake/host.cmake)
