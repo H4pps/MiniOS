@@ -2,7 +2,13 @@
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export VCPKG_ROOT="${VCPKG_ROOT:-$PROJECT_ROOT/.tools/vcpkg}"
-export PATH="$PROJECT_ROOT/.venv/bin:$PATH"
+MINI_OS_VENV="${MINI_OS_VENV:-$PROJECT_ROOT/.venv}"
+MINI_OS_BUILD_ROOT="${MINI_OS_BUILD_ROOT:-$PROJECT_ROOT/build}"
+if [[ "$MINI_OS_BUILD_ROOT" != /* || "$MINI_OS_BUILD_ROOT" == / ]]; then
+    printf 'Error: MINI_OS_BUILD_ROOT must be an absolute directory other than /.\n' >&2
+    exit 1
+fi
+export PATH="$MINI_OS_VENV/bin:$PATH"
 
 # Homebrew LLVM is keg-only and may not be on PATH.
 if ! command -v clang-tidy >/dev/null 2>&1 && command -v brew >/dev/null 2>&1; then

@@ -60,28 +60,38 @@ configure() {
             export CXX="${CXX:-clang++}"
         fi
     fi
-    cmake --preset "$PRESET"
+    cmake --preset "$PRESET" -B "$MINI_OS_BUILD_ROOT/$PRESET"
 }
 
 build() {
     configure
-    cmake --build --preset "$PRESET" --parallel
+    cmake --build "$MINI_OS_BUILD_ROOT/$PRESET" --parallel
 }
+
+test_built() (
+    # CTest presets retain their original log directory even with --test-dir.
+    # Use explicit options so an external build root stays entirely isolated.
+    if [[ "$PRESET" == host-sanitize ]]; then
+        export ASAN_OPTIONS=halt_on_error=1
+        export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
+    fi
+    ctest --test-dir "$MINI_OS_BUILD_ROOT/$PRESET" --output-on-failure --no-tests=error
+)
 
 test_project() {
     build
-    ctest --preset "$PRESET"
+    test_built
 }
 
 lint_project() {
     build
-    python3 scripts/quality.py lint "$PROJECT_ROOT/build/$PRESET"
+    python3 scripts/quality.py lint "$MINI_OS_BUILD_ROOT/$PRESET"
 }
 
 check_host() {
     python3 scripts/quality.py format-check
     lint_project
-    ctest --preset "$PRESET"
+    test_built
     local initial_preset="$PRESET" next_preset
     for next_preset in host-debug host-sanitize host-release; do
         if [[ "$initial_preset" != "$next_preset" ]]; then
@@ -97,10 +107,10 @@ case "$COMMAND" in
     configure) configure ;;
     build|kernel-build) build ;;
     test|kernel-test) test_project ;;
-    run) build; "$PROJECT_ROOT/build/$PRESET/mini_os_demo" ;;
+    run) build; "$MINI_OS_BUILD_ROOT/$PRESET/mini_os_demo" ;;
     kernel-run)
         build
-        python3 scripts/qemu.py run --image "$PROJECT_ROOT/build/$PRESET/kernel.elf"
+        python3 scripts/qemu.py run --image "$MINI_OS_BUILD_ROOT/$PRESET/kernel.elf"
         ;;
     format|format-check)
         require_tool python3
@@ -112,9 +122,9 @@ case "$COMMAND" in
         check_host
         for PRESET in kernel-debug kernel-release; do
             lint_project
-            ctest --preset "$PRESET"
+            test_built
         done
         ;;
-    clean) rm -rf -- "$PROJECT_ROOT/build/$PRESET" ;;
+    clean) rm -rf -- "$MINI_OS_BUILD_ROOT/$PRESET" ;;
     *) usage >&2; fail "Unknown command: $COMMAND" ;;
 esac

@@ -14,10 +14,10 @@ for tool in python3 git clang clang++ clang-format clang-tidy; do
     require_tool "$tool"
 done
 
-if [[ ! -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
-    python3 -m venv "$PROJECT_ROOT/.venv"
+if [[ ! -x "$MINI_OS_VENV/bin/python" ]]; then
+    python3 -m venv "$MINI_OS_VENV"
 fi
-"$PROJECT_ROOT/.venv/bin/python" -m pip install --disable-pip-version-check -r scripts/requirements.txt
+"$MINI_OS_VENV/bin/python" -m pip install --disable-pip-version-check -r scripts/requirements.txt
 
 if [[ "$MODE" == --kernel ]]; then
     # Syntax checks do not create an executable or require hosted libraries.
