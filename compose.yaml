@@ -1,0 +1,26 @@
+services:
+  dev:
+    build: .
+    image: mini-os-dev:local
+    init: true
+    working_dir: /workspace
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace
+        read_only: true
+      - state:/var/mini-os
+    command: [check]
+
+  format:
+    image: mini-os-dev:local
+    init: true
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace
+    command: [format]
+
+volumes:
+  state:
