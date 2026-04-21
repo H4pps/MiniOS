@@ -51,3 +51,18 @@ jobs:
         run: |
           ./scripts/dev.sh kernel-lint kernel-release
           ./scripts/dev.sh kernel-test kernel-release
+
+  docker:
+    name: Docker (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build the development image
+        run: docker compose build dev
+      - name: Run the full host and kernel workflow
+        run: docker compose run --rm -T dev check
