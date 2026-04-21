@@ -1,0 +1,24 @@
+# Send only build inputs; never copy native tools, binaries, Git data, or local configuration.
+**
+!Dockerfile
+!.dockerignore
+!.clang-format
+!.clang-tidy
+!CMakeLists.txt
+!CMakePresets.json
+!vcpkg.json
+!vcpkg-configuration.json
+!cmake/
+!cmake/**
+!include/
+!include/**
+!src/
+!src/**
+!tests/
+!tests/**
+!tools/
+!tools/**
+!scripts/
+!scripts/**
+**/__pycache__
+**/*.pyc
