@@ -15,6 +15,79 @@ code, including the C alignment API. Architecture code lives in
 [architecture guidance](docs/architecture.md), and the [roadmap](docs/roadmap.md).
 Only `ARCH=aarch64`, `PLATFORM=qemu_virt` is supported.
 
+## Docker workflow (macOS, Linux, Windows)
+
+Install [Docker Desktop](https://docs.docker.com/desktop/) on macOS or Windows
+(using Linux containers), or Docker Engine with Compose v2 on Linux. These
+commands work directly in PowerShell as well as a Unix shell; native LLVM,
+Python, CMake, vcpkg, and QEMU installations are unnecessary:
+
+```sh
+docker compose build dev
+docker compose run --rm dev check
+docker compose run --rm dev kernel-run
+```
+
+The image includes Ubuntu 24.04, LLVM / LLD 18, QEMU, the pinned CMake / Ninja
+versions, and vcpkg at the manifest baseline. It builds for the Docker engine's
+native `linux/amd64` or `linux/arm64` architecture. The kernel target remains
+AArch64 on QEMU `virt-8.2`; TCG emulation needs no KVM device or privileged mode.
+
+Pass any existing development command and preset to the `dev` service:
+
+```sh
+docker compose run --rm dev check-host
+docker compose run --rm dev test host-sanitize
+docker compose run --rm dev kernel-test kernel-release
+docker compose run --rm dev kernel-lint
+docker compose run --rm dev run
+docker compose run --rm dev clean kernel-debug
+```
+
+Source changes on the host are immediately visible in the container. The `dev`
+service mounts source read-only; project builds, downloads, and vcpkg binary caches
+persist in a Compose volume under `/var/mini-os`. Build directories are separated
+by container CPU architecture. Native `.venv/`, `.tools/`, and `build/` are never
+used as container tools or build outputs. Rebuild the image after changing
+`Dockerfile`, `scripts/requirements.txt`, or the vcpkg baseline.
+
+Formatting uses a separate service with a writable source mount:
+
+```sh
+docker compose run --rm format
+```
+
+On Linux, match your file ownership when formatting:
+
+```sh
+LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose run --rm format
+```
+
+The Bash wrapper offers the same commands, rebuilds the image when necessary,
+and selects the correct Linux formatter UID / GID automatically:
+
+```sh
+./scripts/docker.sh check
+./scripts/docker.sh kernel-run
+./scripts/docker.sh kernel-test kernel-release
+./scripts/docker.sh format
+./scripts/docker.sh shell
+```
+
+For noninteractive automation, add `-T` to `docker compose run`. To open a shell
+directly, use `docker compose run --rm --entrypoint bash dev -i`. The shell's
+`MINI_OS_BUILD_ROOT` points to the container build directories. `clean PRESET`
+removes just that build; `docker compose down --volumes` deletes all Docker
+builds and dependency caches for this Compose project. Native builds are kept.
+
+The image also contains a source snapshot for use without Compose or a bind
+mount: `docker run --rm --init mini-os-dev:local check`. Compose is preferred for
+ongoing development because it uses current source and retains caches.
+The full workflow is verified locally in both ARM64 and AMD64 containers on
+macOS Docker Desktop; the AMD64 check uses local emulation. CI builds the image
+and runs the same workflow on native AMD64 and ARM64 Linux runners. An actual
+remote Actions run is still pending.
+
 ## Prerequisites and setup
 
 Use Bash, Git, Python 3.9+, and your platform's development tools. Setup installs
@@ -96,7 +169,9 @@ argument. All five presets have separate build directories:
 ./scripts/dev.sh clean kernel-debug
 ```
 
-Scripts work from any directory. On macOS, host builds use Apple's SDK Clang so
+Scripts work from any directory. Set `MINI_OS_BUILD_ROOT` to an absolute directory
+to keep scripted builds elsewhere, and `MINI_OS_VENV` to reuse a prepared tool
+venv. Direct CMake presets still default to `build/`. On macOS, host builds use Apple's SDK Clang so
 its sanitizer runtime matches the OS. Set `CC` / `CXX` before the first host
 configure to override this. Kernel commands resolve Homebrew `llvm@21` and
 `lld@21` separately, ignoring host compiler and SDK environment settings.

@@ -15,6 +15,11 @@ verification and relevant host tests; a successful build alone is insufficient.
 - [x] Provide scripts for setup, builds, tests, the host demo, and quality checks.
 - [x] Verify host tests in debug, release, and sanitizer builds on macOS.
 - [x] Configure GitHub Actions to run host quality checks and tests.
+- [x] Provide Docker / Compose commands for builds, checks, QEMU, formatting, and a shell.
+- [x] Verify the full ARM64 Linux container workflow locally under Docker Desktop on macOS.
+- [x] Verify the full AMD64 Linux container workflow through local Docker emulation.
+- [x] Keep container build directories and dependency caches separate from native tools.
+- [ ] Verify native AMD64 and ARM64 Docker jobs in an actual GitHub Actions run.
 - [ ] Verify the first GitHub Actions run on Linux.
 
 ## Kernel milestones
