@@ -5,7 +5,7 @@ from pathlib import Path
 import struct
 import sys
 
-RAM_START = 0x40080000
+RAM_START = 0x40200000
 RAM_END = 0x48000000
 
 
@@ -62,8 +62,10 @@ def inspect(image):
             require(not (name and section_index == 0), f"Unresolved symbol: {name}")
             if name:
                 symbols[name] = value
-    for name in ("_start", "__bss_start", "__bss_end", "__stack_bottom", "__stack_top", "__image_end"):
+    for name in ("__dtb_start", "__dtb_end", "__image_start", "_start", "__bss_start", "__bss_end", "__stack_bottom", "__stack_top", "__image_end"):
         require(name in symbols, f"Missing layout symbol: {name}")
+    require(symbols["__dtb_start"] == 0x40000000 and symbols["__dtb_end"] == RAM_START, "Expected reserved 2 MiB DTB window")
+    require(symbols["__image_start"] == RAM_START, "Unexpected image start")
     require(symbols["_start"] == entry, "Entry does not point to startup")
     require(symbols["__bss_start"] % 8 == symbols["__bss_end"] % 8 == 0, "BSS must be aligned for zeroing")
     require(symbols["__bss_end"] <= symbols["__stack_bottom"], "Stack overlaps BSS")

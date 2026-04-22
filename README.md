@@ -239,8 +239,8 @@ MMU is off, and has no exceptions, RTTI, stack protector,
 hosted C++ headers, standard-library linkage, or dynamic initialization.
 GoogleTest, vcpkg, macOS SDK configuration, and sanitizers stay in host builds.
 
-The QEMU platform linker script loads the ELF at `0x40080000`, reserving the
-first 512 KiB of 128 MiB RAM for QEMU's device tree. Text, read-only data, data,
+The QEMU platform linker script loads the ELF at `0x40200000`, reserving the
+first 2 MiB of 128 MiB RAM for QEMU's device tree. Text, read-only data, data,
 and aligned BSS have separate sections; the stack reserves another 64 KiB.
 Linker assertions reject runtime constructors/destructors, TLS, and RAM overflow.
 Architecture startup masks interrupts, selects the stack, clears BSS, and calls

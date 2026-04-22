@@ -2,13 +2,17 @@ OUTPUT_FORMAT(elf64-littleaarch64)
 OUTPUT_ARCH(aarch64)
 ENTRY(_start)
 
-/* QEMU virt-8.2, 128 MiB RAM. Leave the first 512 KiB for its DTB. */
-MEMORY { RAM (rwx) : ORIGIN = 0x40080000, LENGTH = 0x07f80000 }
+/* QEMU virt-8.2, 128 MiB RAM. Leave the first 2 MiB for its DTB. */
+MEMORY { RAM (rwx) : ORIGIN = 0x40200000, LENGTH = 0x07e00000 }
 PHDRS {
     text PT_LOAD FLAGS(5);
     rodata PT_LOAD FLAGS(4);
     data PT_LOAD FLAGS(6);
 }
+
+__dtb_start = 0x40000000;
+__dtb_end = ORIGIN(RAM);
+__image_start = ORIGIN(RAM);
 
 SECTIONS {
     .text : {
