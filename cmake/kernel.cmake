@@ -5,6 +5,7 @@ target_compile_options(mini_os_kernel_options INTERFACE
   "$<$<COMPILE_LANGUAGE:CXX>:-nostdinc++;-fno-exceptions;-fno-rtti;-fno-threadsafe-statics>")
 target_link_libraries(mini_os_core PRIVATE mini_os_kernel_options)
 target_link_libraries(mini_os_pl011 PRIVATE mini_os_kernel_options)
+target_link_libraries(mini_os_resources PRIVATE mini_os_kernel_options)
 
 add_executable(mini_os_kernel
   src/arch/aarch64/boot/start.S
@@ -14,7 +15,7 @@ add_executable(mini_os_kernel
   src/kernel/console.cpp)
 set_target_properties(mini_os_kernel PROPERTIES OUTPUT_NAME kernel SUFFIX .elf)
 target_link_libraries(mini_os_kernel PRIVATE
-  mini_os_core mini_os_pl011 mini_os_options mini_os_kernel_options)
+  mini_os_core mini_os_pl011 mini_os_resources mini_os_options mini_os_kernel_options)
 set(KERNEL_LINKER_SCRIPT "${PROJECT_SOURCE_DIR}/src/platform/qemu_virt/kernel.ld")
 set_property(TARGET mini_os_kernel APPEND PROPERTY LINK_DEPENDS "${KERNEL_LINKER_SCRIPT}")
 target_link_options(mini_os_kernel PRIVATE
