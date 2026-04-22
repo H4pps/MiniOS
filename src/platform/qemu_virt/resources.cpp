@@ -49,18 +49,22 @@ Error compatible(const fdt::View &view, fdt::Node node, const char *expected) {
     size_t index = 0;
     return bytes.string_index(expected, index);
 }
-Error extent(const fdt::View &view, fdt::Node node, uint32_t address_cells, uint32_t size_cells,
-             uint64_t &address, uint64_t &size) {
+struct CellWidths {
+    uint32_t address;
+    uint32_t size;
+};
+Error extent(const fdt::View &view, fdt::Node node, CellWidths cells, uint64_t &address,
+             uint64_t &size) {
     fdt::Bytes bytes;
     const Error error = view.property(node, "reg", bytes);
     if (error != Error::none) {
         return error;
     }
-    if (bytes.size != (address_cells + size_cells) * 4U) {
+    if (bytes.size != (static_cast<size_t>(cells.address) + cells.size) * 4U) {
         return Error::bad_value;
     }
     uint32_t value = 0;
-    if (address_cells == 1) {
+    if (cells.address == 1) {
         if (bytes.u32(0, value) != Error::none) {
             return Error::bad_value;
         }
@@ -68,8 +72,8 @@ Error extent(const fdt::View &view, fdt::Node node, uint32_t address_cells, uint
     } else if (bytes.u64(0, address) != Error::none) {
         return Error::bad_value;
     }
-    const size_t offset = address_cells * 4U;
-    if (size_cells == 1) {
+    const size_t offset = static_cast<size_t>(cells.address) * 4U;
+    if (cells.size == 1) {
         if (bytes.u32(offset, value) != Error::none) {
             return Error::bad_value;
         }
@@ -210,7 +214,7 @@ ResourceError discover_resources(const fdt::View &view, PlatformResources &resou
         return ResourceError::unsupported_layout;
     }
     uint64_t uart_base = 0, uart_size = 0;
-    error = extent(view, uart, address_cells, size_cells, uart_base, uart_size);
+    error = extent(view, uart, {address_cells, size_cells}, uart_base, uart_size);
     if (error != Error::none) {
         return error == Error::ambiguous ? ResourceError::ambiguous : ResourceError::invalid_uart;
     }
@@ -296,7 +300,7 @@ ResourceError discover_resources(const fdt::View &view, PlatformResources &resou
         if (memory_found) {
             return ResourceError::ambiguous;
         }
-        const Error reg = extent(view, event.node, address_cells, size_cells, ram_base, ram_size);
+        const Error reg = extent(view, event.node, {address_cells, size_cells}, ram_base, ram_size);
         if (reg != Error::none) {
             return reg == Error::ambiguous ? ResourceError::ambiguous
                                            : ResourceError::invalid_memory;

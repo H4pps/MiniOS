@@ -356,7 +356,6 @@ Error View::find_node(String path, Node &node) const {
     if (path.data == nullptr || path.size == 0 || path.data[0] != '/') {
         return Error::bad_value;
     }
-    Node current = structure_;
     if (data_ == nullptr) {
         return Error::bad_header;
     }
@@ -370,7 +369,7 @@ Error View::find_node(String path, Node &node) const {
     if (error != Error::none || event.kind != Kind::begin) {
         return Error::bad_structure;
     }
-    current = event.node;
+    Node current = event.node;
     size_t offset = 1;
     while (offset < path.size) {
         size_t end = offset;
