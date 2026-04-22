@@ -1,16 +1,21 @@
 # mini-os
 
 A freestanding C17 / C++20 kernel for **AArch64 / ARMv8-A on QEMU `virt`**.
-It boots at EL1, initializes a polling PL011 serial transmitter, checks its
-startup state, and prints:
+It boots at EL1, initializes a polling PL011 UART, checks its startup state,
+and enters an editable serial console:
 
 ```text
 mini-os: boot OK
+mini-os: uart ready
+mini-os> hello
+echo: hello
+mini-os>
 ```
 
 Host builds provide a native demo and GoogleTest tests for hardware-independent
-code, including the C alignment API. Architecture code lives in
-`src/arch/aarch64/`, platform code in `src/platform/qemu_virt/`, drivers in
+code, including the C alignment API and bounded line editor. Register fixtures
+exercise the same PL011 implementation used by the kernel. Architecture code
+lives in `src/arch/aarch64/`, platform code in `src/platform/qemu_virt/`, drivers in
 `src/drivers/`, and generic code in `src/kernel/`. See [AGENTS.md](AGENTS.md),
 [architecture guidance](docs/architecture.md), and the [roadmap](docs/roadmap.md).
 Only `ARCH=aarch64`, `PLATFORM=qemu_virt` is supported.
@@ -86,7 +91,16 @@ ongoing development because it uses current source and retains caches.
 The full workflow is verified locally in both ARM64 and AMD64 containers on
 macOS Docker Desktop; the AMD64 check uses local emulation. CI builds the image
 and runs the same workflow on native AMD64 and ARM64 Linux runners. An actual
-remote Actions run is still pending.
+remote Actions run is still pending. To reproduce AMD64 verification on an ARM64
+Docker Desktop machine, use emulation explicitly:
+
+```sh
+docker buildx build --platform linux/amd64 --load -t mini-os-dev:amd64 .
+docker run --rm --init --platform linux/amd64 mini-os-dev:amd64 check
+```
+
+This uses the image's source snapshot and fresh build directories; emulated host
+builds and analysis are slower than native ARM64 checks.
 
 ## Prerequisites and setup
 
@@ -149,13 +163,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, ELF, and boot-runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot and UART tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -195,11 +209,33 @@ For fresh direct host configuration on macOS, set `CC="$(xcrun --find clang)"`
 and `CXX="$(xcrun --find clang++)"`. Use an ignored `CMakeUserPresets.json` for
 machine-specific IDE settings.
 
+## Serial input
+
+Run `./scripts/dev.sh kernel-run` or `docker compose run --rm dev kernel-run`,
+then type at `mini-os> `. Accepted printable ASCII characters echo immediately.
+Backspace and Delete erase the last character; Enter accepts CR, LF, or CRLF
+without submitting twice. Unsupported control bytes and non-ASCII input are
+ignored. Nonempty lines print `echo: <line>`; empty lines simply show a fresh
+prompt. Commands, history, and cursor movement are future work.
+
+The buffer holds at most 127 characters plus a terminating NUL. The next
+printable character rings one bell and rejects the entire line. Further input,
+including deletion, is discarded until Enter; the console reports
+`mini-os: line too long` and recovers. A framing, parity, break, or overrun error
+also discards the affected line through Enter, then reports
+`mini-os: uart RX error`. Driver fixtures verify individual/combined error flags
+and hardware-error clearing; editor tests verify cancellation and recovery.
+QEMU tests prove actual reception and editing, but do not inject hardware errors.
+
+Press **Ctrl-C** to stop QEMU. For interactive Docker use, keep stdin attached
+and omit `-T`; automated checks use `-T` and open their own emulator input pipe.
+
 ## Boot contract
 
 The kernel uses Clang targeting `aarch64-none-elf` and LLD with CMake's Generic
 system. Compiler probes produce static libraries. Kernel code is freestanding,
-uses general registers only, and has no exceptions, RTTI, stack protector,
+uses general registers only and strict alignment (`-mstrict-align`) while the
+MMU is off, and has no exceptions, RTTI, stack protector,
 hosted C++ headers, standard-library linkage, or dynamic initialization.
 GoogleTest, vcpkg, macOS SDK configuration, and sanitizers stay in host builds.
 
@@ -209,14 +245,17 @@ and aligned BSS have separate sections; the stack reserves another 64 KiB.
 Linker assertions reject runtime constructors/destructors, TLS, and RAM overflow.
 Architecture startup masks interrupts, selects the stack, clears BSS, and calls
 `kernel_entry`. The entry checks EL1, initialized data, zeroed BSS, and alignment
-before confirming boot, then remains in the architecture halt loop. Failures
+before confirming boot, then polls the serial console continuously. Receive
+interrupts are disabled, so the idle console does not use `WFI`. Failures
 with a working console print `mini-os: boot FAIL: <reason>`.
 
 The platform temporarily supplies UART address `0x09000000` and a 24 MHz clock
-to the PL011 driver. Transmission uses polling at 115200 baud, 8N1; the platform
-converts newlines to CRLF. These assumptions come from the
+to the PL011 driver. Reception and transmission use polling at 115200 baud, 8N1,
+with interrupts and DMA disabled; the platform converts newlines to CRLF.
+The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
+for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
-UART input, device-tree discovery, interrupts, MMU setup, EL2/EL3 transitions,
+Device-tree discovery, interrupts, MMU setup, EL2/EL3 transitions,
 and scheduling remain later milestones.
 
 Interactive execution and tests share this fixed emulator configuration:
@@ -238,9 +277,15 @@ The boot runner requires the exact complete success line on serial stdout within
 10 seconds. Failure markers, premature exit, missing tools/images, and timeouts
 fail the test, preserving serial output and emulator diagnostics. The runner
 terminates and reaps QEMU, escalating to forced shutdown when needed. CTest has
-an outer 20-second timeout. Fake-process tests cover fragmented output, failures,
-early exit, and timeout cleanup. An independent ELF check verifies architecture,
-entry address, load segments, stack layout, and absence of runtime imports.
+an outer 20-second timeout. `kernel.boot` preserves the boot-only check;
+`kernel.uart` waits for readiness, sends input incrementally, and verifies fresh
+responses in order under the same ten-second deadline. It exercises repeated
+lines, both deletion keys, CR/LF/CRLF, ignored bytes, the 127-character boundary,
+overflow rejection, and recovery. Fake-process tests cover fragmented output,
+bidirectional exchanges, incorrect/preloaded responses, closed stdin, early exit,
+timeouts, stderr draining, and terminate/kill/reap cleanup. An independent ELF
+check verifies architecture, entry address, load segments, stack layout, and
+absence of runtime imports.
 
 ## Quality and dependencies
 
@@ -252,7 +297,7 @@ entry address, load segments, stack layout, and absence of runtime imports.
   packages are pinned by `builtin-baseline`.
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
-  `check-host`; the kernel job analyzes and boot-tests both kernel presets.
+  `check-host`; the kernel job analyzes and boot/UART-tests both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 

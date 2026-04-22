@@ -25,7 +25,8 @@ verification and relevant host tests; a successful build alone is insufficient.
 ## Kernel milestones
 
 Work through these milestones in order. The first kernel boot is verified locally
-in debug and release builds. **Next milestone: complete PL011 UART receive support.**
+in debug and release builds. PL011 receive and editable serial input are also
+verified locally. **Next milestone: discover platform resources from the Device Tree.**
 
 - [x] **Boot + linker script**
   - [x] Separate host and freestanding AArch64 CMake builds and presets.
@@ -34,11 +35,15 @@ in debug and release builds. **Next milestone: complete PL011 UART receive suppo
   - [x] Verify debug and release kernels print `mini-os: boot OK` under QEMU `virt-8.2`.
   - [x] Check EL1, initialized data, zeroed BSS, and the alignment utility before confirmation.
   - [x] Add bounded boot tests and verify runner failure handling and process cleanup.
-- [ ] **PL011 UART**
+- [x] **PL011 UART**
   - [x] Implement initialization and polling transmission using platform-supplied resources.
   - [x] Verify 115200 baud, 8N1 serial output with platform CRLF conversion under QEMU.
-  - [ ] Implement receive support.
-  - [ ] Verify serial input under QEMU.
+  - [x] Implement polling receive with per-byte error flags and hardware-error clearing.
+  - [x] Test the shared driver with host register fixtures, including NUL and all error combinations.
+  - [x] Add a bounded ASCII line editor with Backspace/Delete, CRLF suppression, and rejection recovery.
+  - [x] Enter the editable serial console after boot confirmation; keep command dispatch deferred.
+  - [x] Verify debug/release serial input, editing, boundaries, overflow, and recovery under QEMU.
+  - [x] Verify bidirectional runner failures, fragmented output, deadlines, diagnostics, and process cleanup.
 - [ ] **Device Tree parser**
   - [ ] Parse the QEMU-provided device tree for platform resources.
   - [ ] Test malformed input on the host and verify discovery under QEMU.
@@ -80,5 +85,5 @@ in debug and release builds. **Next milestone: complete PL011 UART receive suppo
   - [ ] Verify reports against controlled workloads under QEMU.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART exchanges, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.
