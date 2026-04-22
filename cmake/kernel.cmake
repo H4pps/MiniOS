@@ -1,7 +1,7 @@
 add_library(mini_os_kernel_options INTERFACE)
 target_compile_options(mini_os_kernel_options INTERFACE
   -mcpu=cortex-a53
-  "$<$<COMPILE_LANGUAGE:C,CXX>:-ffreestanding;-fno-builtin;-fno-stack-protector;-fno-pic;-fno-pie;-fno-unwind-tables;-fno-asynchronous-unwind-tables;-mgeneral-regs-only;-ffunction-sections;-fdata-sections>"
+  "$<$<COMPILE_LANGUAGE:C,CXX>:-ffreestanding;-fno-builtin;-fno-stack-protector;-fno-pic;-fno-pie;-fno-unwind-tables;-fno-asynchronous-unwind-tables;-mgeneral-regs-only;-mstrict-align;-ffunction-sections;-fdata-sections>"
   "$<$<COMPILE_LANGUAGE:CXX>:-nostdinc++;-fno-exceptions;-fno-rtti;-fno-threadsafe-statics>")
 target_link_libraries(mini_os_core PRIVATE mini_os_kernel_options)
 target_link_libraries(mini_os_pl011 PRIVATE mini_os_kernel_options)
@@ -10,7 +10,8 @@ add_executable(mini_os_kernel
   src/arch/aarch64/boot/start.S
   src/arch/aarch64/cpu.cpp
   src/platform/qemu_virt/console.cpp
-  src/kernel/boot.cpp)
+  src/kernel/boot.cpp
+  src/kernel/console.cpp)
 set_target_properties(mini_os_kernel PROPERTIES OUTPUT_NAME kernel SUFFIX .elf)
 target_link_libraries(mini_os_kernel PRIVATE
   mini_os_core mini_os_pl011 mini_os_options mini_os_kernel_options)

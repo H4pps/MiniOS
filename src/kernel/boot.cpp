@@ -1,5 +1,6 @@
 #include "mini_os/alignment.h"
 #include "mini_os/arch.h"
+#include "mini_os/console.h"
 #include "mini_os/platform.h"
 
 #include <stdint.h>
@@ -34,5 +35,5 @@ extern "C" [[noreturn]] void kernel_entry() {
         fail("alignment utility");
     }
     platform::early_write("mini-os: boot OK\n");
-    arch::halt();
+    kernel::run_console();
 }
