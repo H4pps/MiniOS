@@ -14,11 +14,11 @@ SPEC.loader.exec_module(qemu)
 
 
 class BootRunnerTests(unittest.TestCase):
-    def run_fake(self, body, timeout=0.5):
+    def run_fake(self, body, timeout=0.5, runner=qemu.boot_test):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "fake_qemu.py"
             script.write_text("import os, signal, sys, time\n" + body)
-            result = qemu.boot_test([sys.executable, "-u", str(script)], timeout)
+            result = runner([sys.executable, "-u", str(script)], timeout)
         # waitpid distinguishes a reaped child from a terminated zombie.
         with self.assertRaises(ChildProcessError):
             os.waitpid(result.pid, os.WNOHANG)
