@@ -150,3 +150,17 @@ TEST(Fdt, ByteAndStringHelpersRejectOverflowAndMalformedLists) {
     fdt::String text;
     EXPECT_EQ((fdt::Bytes{list.data(), list.size()}).string(text), fdt::Error::bad_value);
 }
+
+TEST(Fdt, NamesFollowNodeAndPropertyCharacterAndLengthRules) {
+    for (const auto &name :
+         std::vector<std::string>{"n!", "1node", "node@", "@1", "node@0@1", std::string(32, 'a')}) {
+        EXPECT_EQ(open(fixture::blob({"", {}, {{name, {}, {}}}})), fdt::Error::bad_structure)
+            << name;
+    }
+    for (const auto &name : std::vector<std::string>{"", "p!", "p@1", std::string(32, 'a')}) {
+        EXPECT_EQ(open(fixture::blob({"", {{name, {}}}, {}})), fdt::Error::bad_structure) << name;
+    }
+    EXPECT_EQ(open(fixture::blob(
+                  {"", {{"vendor,property?#-._+", {}}}, {{std::string(31, 'a') + "@0", {}, {}}}})),
+              fdt::Error::none);
+}

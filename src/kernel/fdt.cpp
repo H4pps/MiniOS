@@ -11,13 +11,25 @@ bool add32(uint32_t start, uint32_t length, uint32_t limit, uint32_t &end) {
     end = start + length;
     return true;
 }
-bool name(fdt::Bytes bytes, size_t start, fdt::String &text, size_t &after) {
+enum class NameKind : uint8_t { node, property };
+bool letter(uint8_t byte) { return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z'); }
+bool name(fdt::Bytes bytes, size_t start, fdt::String &text, size_t &after,
+          NameKind kind = NameKind::node) {
     if (start >= bytes.size) {
         return false;
     }
     size_t end = start;
+    size_t unit = 0;
     while (end < bytes.size && bytes.data[end] != 0) {
-        if (bytes.data[end] < 33 || bytes.data[end] > 126 || bytes.data[end] == '/') {
+        const uint8_t byte = bytes.data[end];
+        if (kind == NameKind::node && byte == '@') {
+            if (unit != 0 || end == start || end - start > 31) {
+                return false;
+            }
+            unit = end + 1;
+        } else if (!letter(byte) && !(byte >= '0' && byte <= '9') && byte != ',' && byte != '.' &&
+                   byte != '_' && byte != '+' && byte != '-' &&
+                   !(kind == NameKind::property && (byte == '?' || byte == '#'))) {
             return false;
         }
         ++end;
@@ -25,7 +37,16 @@ bool name(fdt::Bytes bytes, size_t start, fdt::String &text, size_t &after) {
     if (end == bytes.size) {
         return false;
     }
-    text = {reinterpret_cast<const char *>(bytes.data + start), end - start};
+    const size_t length = end - start;
+    if (kind == NameKind::property) {
+        if (length == 0 || length > 31) {
+            return false;
+        }
+    } else if (length != 0 &&
+               (!letter(bytes.data[start]) || (unit == 0 && length > 31) || unit == end)) {
+        return false;
+    }
+    text = {reinterpret_cast<const char *>(bytes.data + start), length};
     after = end + 1;
     return true;
 }
@@ -167,7 +188,8 @@ Error View::decode(uint32_t &offset, Event &event) const {
         uint32_t end = 0;
         size_t after = 0;
         if (!add32(offset, length, structure_end_, end) || name_offset >= strings_end_ - strings_ ||
-            !name({data_, strings_end_}, strings_ + name_offset, event.name, after) ||
+            !name({data_, strings_end_}, strings_ + name_offset, event.name, after,
+                  NameKind::property) ||
             event.name.size == 0 || !fits(end, (4 - end % 4) % 4, structure_end_)) {
             return Error::bad_structure;
         }
