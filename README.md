@@ -1,10 +1,11 @@
 # mini-os
 
 A freestanding C17 / C++20 kernel for **AArch64 / ARMv8-A on QEMU `virt`**.
-It boots at EL1, initializes a polling PL011 UART, checks its startup state,
-and enters an editable serial console:
+It boots at EL1, discovers the PL011 UART and RAM from QEMU's device tree,
+checks its startup state, and enters an editable serial console:
 
 ```text
+mini-os: dtb OK uart=0x0000000009000000 clock=24000000 ram=0x0000000040000000 size=0x0000000008000000
 mini-os: boot OK
 mini-os: uart ready
 mini-os> hello
@@ -13,8 +14,8 @@ mini-os>
 ```
 
 Host builds provide a native demo and GoogleTest tests for hardware-independent
-code, including the C alignment API and bounded line editor. Register fixtures
-exercise the same PL011 implementation used by the kernel. Architecture code
+code, including the C alignment API, bounded line editor, FDT parser, and pure
+platform resource discovery. Register fixtures exercise the same PL011 implementation used by the kernel. Architecture code
 lives in `src/arch/aarch64/`, platform code in `src/platform/qemu_virt/`, drivers in
 `src/drivers/`, and generic code in `src/kernel/`. See [AGENTS.md](AGENTS.md),
 [architecture guidance](docs/architecture.md), and the [roadmap](docs/roadmap.md).
@@ -163,13 +164,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot and UART tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, and DTB tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -249,13 +250,16 @@ before confirming boot, then polls the serial console continuously. Receive
 interrupts are disabled, so the idle console does not use `WFI`. Failures
 with a working console print `mini-os: boot FAIL: <reason>`.
 
-The platform temporarily supplies UART address `0x09000000` and a 24 MHz clock
-to the PL011 driver. Reception and transmission use polling at 115200 baud, 8N1,
+The bootstrap console uses UART address `0x09000000` and a 24 MHz clock for
+startup diagnostics. Before reporting boot success, the platform discovers and
+validates the UART base, register extent, clock, and RAM, then reinitializes the
+driver with the discovered UART configuration. Reception and transmission use
+polling at 115200 baud, 8N1,
 with interrupts and DMA disabled; the platform converts newlines to CRLF.
 The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
 for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
-Device-tree discovery, interrupts, MMU setup, EL2/EL3 transitions,
+CPU/GIC discovery, interrupts, MMU setup, EL2/EL3 transitions, command dispatch,
 and scheduling remain later milestones.
 
 Interactive execution and tests share this fixed emulator configuration:
@@ -270,20 +274,50 @@ qemu-system-aarch64 \
 
 The versioned machine keeps hardware behavior consistent across local and CI
 runs. Direct ELF boot enters at the ELF entry point; the kernel does not assume
-the Linux image protocol's `x0` device-tree handoff. See
-[QEMU boot documentation](https://www.qemu.org/docs/master/system/arm/virt.html).
+the Linux image protocol's `x0` device-tree handoff. The platform locates the
+DTB at QEMU's RAM-base address `0x40000000` and bounds reads to the reserved
+2 MiB window. See [QEMU bare-metal boot documentation](https://www.qemu.org/docs/master/system/arm/virt.html#hardware-configuration-information-for-bare-metal-programming).
 
-The boot runner requires the exact complete success line on serial stdout within
-10 seconds. Failure markers, premature exit, missing tools/images, and timeouts
+The allocation-free `fdt::View` reads big-endian values bytewise, accepts
+unaligned buffers and version-17-compatible trees, validates sections and tokens
+before lookup, and limits nesting to 32 nodes. It borrows the blob: the bytes
+must remain alive and unchanged while the view is used. Host tests exercise
+truncation, malformed structure and strings, section overlap, depth limits,
+ambiguous lookups, and overflowing extents under ASan/UBSan. Its layout follows
+the [DTB format specification](https://devicetree-specification.readthedocs.io/en/stable/flattened-format.html).
+
+Resource discovery requires `/chosen/stdout-path`, resolving absolute paths or
+`/aliases` and stripping console options; baud remains fixed at 115200. The
+selected enabled root-level node must match `arm,pl011`. Registers use one- or
+two-cell root address/size fields (default 2/1). `uartclk` resolves through
+`clock-names`, `clocks`, and a phandle to an enabled `fixed-clock` provider with
+`#clock-cells = 0` and a nonzero 32-bit frequency. All referenced clocks must
+use this supported zero-cell layout. Exactly one enabled root-level memory
+node with one extent is supported. Bus translation and multiple RAM extents
+are rejected. RAM must cover the DTB window and the complete image, including
+BSS and stack; the linker retains its 128 MiB budget even with larger RAM.
+Invalid or missing resources print `mini-os: boot FAIL: dtb <reason>` through
+the bootstrap console and halt without boot success.
+
+The boot runner requires the exact resource confirmation followed by the exact
+complete boot success line on serial stdout within 10 seconds. Failure markers,
+premature exit, missing tools/images, and timeouts
 fail the test, preserving serial output and emulator diagnostics. The runner
 terminates and reaps QEMU, escalating to forced shutdown when needed. CTest has
 an outer 20-second timeout. `kernel.boot` preserves the boot-only check;
 `kernel.uart` waits for readiness, sends input incrementally, and verifies fresh
 responses in order under the same ten-second deadline. It exercises repeated
 lines, both deletion keys, CR/LF/CRLF, ignored bytes, the 127-character boundary,
-overflow rejection, and recovery. Fake-process tests cover fragmented output,
+overflow rejection, and recovery. `kernel.fdt` shares one ten-second deadline
+across normal 128 MiB discovery, 256 MiB discovery with every UART exchange, and
+corrupted-magic rejection. For corruption it starts paused, uses QMP to
+re-register a data-loader device after the DTB ROM reset handler, resets, and
+resumes. This scenario omits `-no-reboot` to allow that deliberate reset; normal
+runs retain it. No extra host tool is required. Fake-process tests cover
+fragmented output,
 bidirectional exchanges, incorrect/preloaded responses, closed stdin, early exit,
-timeouts, stderr draining, and terminate/kill/reap cleanup. An independent ELF
+timeouts, stderr draining, QMP failures, expected rejection, and
+terminate/kill/reap cleanup. An independent ELF
 check verifies architecture, entry address, load segments, stack layout, and
 absence of runtime imports.
 
@@ -297,7 +331,7 @@ absence of runtime imports.
   packages are pinned by `builtin-baseline`.
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
-  `check-host`; the kernel job analyzes and boot/UART-tests both kernel presets.
+  `check-host`; the kernel job analyzes and boot/UART/DTB-tests both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 

@@ -25,8 +25,9 @@ verification and relevant host tests; a successful build alone is insufficient.
 ## Kernel milestones
 
 Work through these milestones in order. The first kernel boot is verified locally
-in debug and release builds. PL011 receive and editable serial input are also
-verified locally. **Next milestone: discover platform resources from the Device Tree.**
+in debug and release builds. PL011 receive, editable serial input, and UART/RAM
+device-tree discovery are verified natively and in ARM64/AMD64 containers.
+**Next milestone: CPU/system-register inspection.**
 
 - [x] **Boot + linker script**
   - [x] Separate host and freestanding AArch64 CMake builds and presets.
@@ -44,16 +45,24 @@ verified locally. **Next milestone: discover platform resources from the Device 
   - [x] Enter the editable serial console after boot confirmation; keep command dispatch deferred.
   - [x] Verify debug/release serial input, editing, boundaries, overflow, and recovery under QEMU.
   - [x] Verify bidirectional runner failures, fragmented output, deadlines, diagnostics, and process cleanup.
-- [ ] **Device Tree parser**
-  - [ ] Parse the QEMU-provided device tree for platform resources.
-  - [ ] Test malformed input on the host and verify discovery under QEMU.
+- [x] **Device Tree UART/RAM discovery**
+  - [x] Reserve the first 2 MiB for the DTB and verify the ELF entry at `0x40200000`.
+  - [x] Add a bounded, allocation-free FDT reader with bytewise decoding and a 32-node depth limit.
+  - [x] Resolve the chosen PL011 console, aliases, fixed clocks, and one RAM extent.
+  - [x] Reject ambiguous resources, unsupported layouts, overflow, and invalid boot-memory coverage.
+  - [x] Switch from bootstrap constants to discovered UART resources before reporting boot success.
+  - [x] Test malformed trees and non-default resources under host sanitizers.
+  - [x] Verify 128/256 MiB discovery, editable UART input, and corrupted-DTB rejection in both kernel presets.
+  - [x] Run native, ARM64 Docker, and emulated AMD64 Docker checks, including ELF inspection.
 - [ ] **CPU/system-register inspection**
+  - [ ] Discover CPU nodes and topology from the device tree.
   - [ ] Add AArch64 CPU and system-register inspection interfaces.
   - [ ] Verify readable inspection output through the serial console.
 - [ ] **Exception handling**
   - [ ] Implement AArch64 exception vectors and diagnostic handlers.
   - [ ] Trigger a controlled exception and verify the reported context.
 - [ ] **GICv3**
+  - [ ] Discover GIC resources and interrupt descriptions from the device tree.
   - [ ] Implement interrupt-controller initialization and interrupt dispatch.
   - [ ] Verify interrupt delivery and acknowledgement under QEMU.
 - [ ] **ARM Generic Timer**
@@ -85,5 +94,5 @@ verified locally. **Next milestone: discover platform resources from the Device 
   - [ ] Verify reports against controlled workloads under QEMU.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot/UART exchanges, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART/DTB tests, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.
