@@ -15,7 +15,8 @@ DISCOVERY = "os.write(1, " + repr(qemu.discovery_line()) + ")\n"
 
 
 class BootRunnerTests(unittest.TestCase):
-    def run_fake(self, body, timeout=0.5, runner=qemu.boot_test, command_args=()):
+    # Leave time for interpreter startup under AMD64 Docker emulation.
+    def run_fake(self, body, timeout=1, runner=qemu.boot_test, command_args=()):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / "fake_qemu.py"
             script.write_text("import os, signal, sys, time\n" + body)

@@ -63,7 +63,7 @@ class FdtRunnerTests(unittest.TestCase):
         for output in (b"mini-os: boot OK\n", qemu.discovery_line(256) + b"mini-os: boot OK\n",
                        b"mini-os: boot OK\n" + qemu.discovery_line()):
             result = self.run_fake("os.write(1, " + repr(output) + ")\ntime.sleep(30)\n",
-                                   timeout=0.2, runner=qemu.boot_test)
+                                   timeout=0.5, runner=qemu.boot_test)
             self.assertFalse(result.success)
 
     def test_qmp_disconnect_deadline_and_errors_reap_process(self):
@@ -77,11 +77,11 @@ class FdtRunnerTests(unittest.TestCase):
                     "server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)\n"
                     "server.bind(" + repr(str(path)) + "); server.listen(1)\n"
                     "connection, _ = server.accept()\n"
-                    "connection.sendall(" + repr(response) + ")\n"
                     "os.write(2, b'injection diagnostic\\n')\n"
+                    "connection.sendall(" + repr(response) + ")\n"
                     + ("connection.close()\n" if not response else "") + "time.sleep(30)\n"
                 )
-                result = self.run_fake(body, timeout=0.2,
+                result = self.run_fake(body, timeout=0.5,
                     runner=lambda command, timeout: qemu.serial_test(
                         command, timeout, expected_failure=FAILURE, qmp_path=path))
                 self.assertFalse(result.success)
@@ -109,7 +109,7 @@ class FdtRunnerTests(unittest.TestCase):
             "os.write(1, " + repr(qemu.READY) + ")\ntime.sleep(30)\n"
         )
         started = time.monotonic()
-        result = self.run_fake(body, timeout=0.3)
+        result = self.run_fake(body, timeout=0.8)
         self.assertFalse(result.success)
         self.assertIn("256 MiB", result.reason)
         self.assertLess(time.monotonic() - started, 1.5)
