@@ -71,9 +71,13 @@ if(MINI_OS_SANITIZERS)
   target_link_options(mini_os_options INTERFACE -fsanitize=address,undefined)
 endif()
 
+add_library(mini_os_cpu STATIC src/arch/aarch64/cpu_decode.cpp)
+target_include_directories(mini_os_cpu PUBLIC include)
+target_link_libraries(mini_os_cpu PRIVATE mini_os_options)
+
 add_library(mini_os_core STATIC src/kernel/alignment.c src/kernel/line_editor.cpp src/kernel/fdt.cpp)
 target_include_directories(mini_os_core PUBLIC include)
-target_link_libraries(mini_os_core PRIVATE mini_os_options)
+target_link_libraries(mini_os_core PRIVATE mini_os_cpu mini_os_options)
 
 add_library(mini_os_pl011 STATIC src/drivers/uart/pl011/pl011.cpp)
 target_include_directories(mini_os_pl011 PUBLIC include)

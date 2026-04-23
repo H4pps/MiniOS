@@ -4,6 +4,7 @@ target_compile_options(mini_os_kernel_options INTERFACE
   "$<$<COMPILE_LANGUAGE:C,CXX>:-ffreestanding;-fno-builtin;-fno-stack-protector;-fno-pic;-fno-pie;-fno-unwind-tables;-fno-asynchronous-unwind-tables;-mgeneral-regs-only;-mstrict-align;-ffunction-sections;-fdata-sections>"
   "$<$<COMPILE_LANGUAGE:CXX>:-nostdinc++;-fno-exceptions;-fno-rtti;-fno-threadsafe-statics>")
 target_link_libraries(mini_os_core PRIVATE mini_os_kernel_options)
+target_link_libraries(mini_os_cpu PRIVATE mini_os_kernel_options)
 target_link_libraries(mini_os_pl011 PRIVATE mini_os_kernel_options)
 target_link_libraries(mini_os_resources PRIVATE mini_os_kernel_options)
 
