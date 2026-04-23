@@ -2,14 +2,17 @@
 """Shared QEMU configuration and bounded serial boot and input verification."""
 
 import argparse
+import json
 import math
 from dataclasses import dataclass
 import os
 from pathlib import Path
 import selectors
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 import time
 
 SUCCESS = b"mini-os: boot OK"
@@ -42,12 +45,17 @@ def stop_process(process):
 
 
 PROMPT = b"mini-os> "
-READY = SUCCESS + b"\r\nmini-os: uart ready\r\n" + PROMPT
+def discovery_line(memory_mib=128):
+    return (f"mini-os: dtb OK uart=0x0000000009000000 clock=24000000 "
+            f"ram=0x0000000040000000 size=0x{memory_mib * 1024 * 1024:016x}\r\n").encode()
 
 
-def uart_exchanges():
+READY = discovery_line() + SUCCESS + b"\r\nmini-os: uart ready\r\n" + PROMPT
+
+
+def uart_exchanges(memory_mib=128):
     """Send small fresh exchanges, pacing printable input by its immediate echo."""
-    yield "readiness", b"", READY
+    yield "readiness", b"", discovery_line(memory_mib) + SUCCESS + b"\r\nmini-os: uart ready\r\n" + PROMPT
     cases = [
         (b"first\n", b"first"),
         (b"first\n", b"first"),
@@ -94,7 +102,78 @@ def uart_exchanges():
             yield f"case {index + 1}, byte {byte}", bytes([byte]), expected
 
 
-def serial_test(command, timeout, exchanges=None):
+def drain(selector, output, wait, qmp_output=None):
+    for key, _ in selector.select(wait):
+        chunk = os.read(key.fd, 65536)
+        if chunk:
+            destination = qmp_output if key.data == "qmp" else output[key.data]
+            destination.extend(chunk)
+        else:
+            selector.unregister(key.fileobj)
+
+
+def inject_dtb_failure(process, path, deadline, selector, output):
+    """Re-register a cold-plugged data loader after ROM reset, then reset and run."""
+    # A command-line loader resets before the DTB ROM and is overwritten by it.
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as control:
+        while True:
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Timed out connecting to QMP for DTB injection")
+            if process.poll() is not None:
+                raise RuntimeError(f"Emulator exited prematurely ({process.returncode})")
+            try:
+                control.connect(str(path))
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                drain(selector, output, min(0.01, max(0, deadline - time.monotonic())))
+        control.setblocking(False)
+        selector.register(control, selectors.EVENT_READ, "qmp")
+        messages = bytearray()
+        requests = [
+            {"execute": "qmp_capabilities", "id": 1},
+            {"execute": "qom-set", "id": 2,
+             "arguments": {"path": "/machine/peripheral/dtb-corruption", "property": "realized", "value": False}},
+            {"execute": "qom-set", "id": 3,
+             "arguments": {"path": "/machine/peripheral/dtb-corruption", "property": "realized", "value": True}},
+            {"execute": "system_reset", "id": 4},
+            {"execute": "cont", "id": 5},
+        ]
+        stage = -1
+        pending = b""
+        try:
+            while stage < len(requests):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("Timed out during QMP DTB injection")
+                if process.poll() is not None:
+                    raise RuntimeError(f"Emulator exited prematurely ({process.returncode})")
+                if pending:
+                    try:
+                        pending = pending[control.send(pending):]
+                    except BlockingIOError:
+                        pass
+                drain(selector, output, min(0.01, max(0, deadline - time.monotonic())), messages)
+                if control not in selector.get_map():
+                    raise RuntimeError("QMP closed during DTB injection")
+                while b"\n" in messages:
+                    line, _, rest = messages.partition(b"\n")
+                    messages[:] = rest
+                    response = json.loads(line)
+                    if "error" in response:
+                        raise RuntimeError(f"QMP DTB injection failed: {response['error']}")
+                    if stage == -1 and "QMP" in response:
+                        stage = 0
+                    elif 0 <= stage < len(requests) and response.get("id") == requests[stage]["id"] and "return" in response:
+                        stage += 1
+                    else:
+                        continue  # Asynchronous RESET/RESUME events are not replies.
+                    if stage < len(requests):
+                        pending = json.dumps(requests[stage]).encode() + b"\n"
+        finally:
+            if control in selector.get_map():
+                selector.unregister(control)
+
+
+def serial_test(command, timeout, exchanges=None, expected_failure=None, qmp_path=None):
     """One deadline and continuously drained pipes for boot and UART protocols."""
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("Serial deadline must be positive")
@@ -118,6 +197,8 @@ def serial_test(command, timeout, exchanges=None):
                 selector.register(stream, selectors.EVENT_READ, name)
             if interactive:
                 os.set_blocking(process.stdin.fileno(), False)
+            if qmp_path is not None:
+                inject_dtb_failure(process, qmp_path, deadline, selector, output)
             while time.monotonic() < deadline:
                 if interactive and step is not None and sent < len(step[1]):
                     try:
@@ -127,20 +208,21 @@ def serial_test(command, timeout, exchanges=None):
                     except BrokenPipeError:
                         reason = "Emulator closed serial stdin"
                         break
-                for key, _ in selector.select(min(0.01, max(0, deadline - time.monotonic()))):
-                    chunk = os.read(key.fd, 65536)
-                    if chunk:
-                        output[key.data].extend(chunk)
-                    else:
-                        selector.unregister(key.fileobj)
+                drain(selector, output, min(0.01, max(0, deadline - time.monotonic())))
                 serial = bytes(output["stdout"])
-                if FAILURE in serial:
+                if FAILURE in serial and expected_failure is None:
                     reason = "Kernel reported boot failure"
                     break
                 if process.poll() is not None:
                     reason = f"Emulator exited prematurely ({process.returncode})"
                     break
-                if interactive:
+                if expected_failure is not None:
+                    lines = serial.replace(b"\r\n", b"\n").split(b"\n")[:-1]
+                    if SUCCESS in serial or any(FAILURE in line and line != expected_failure for line in lines):
+                        reason = "Incorrect expected DTB failure response"
+                        break
+                    complete = expected_failure in lines
+                elif interactive:
                     if step is not None:
                         name, payload, expected = step
                         fresh = serial[cursor:cursor + len(expected)]
@@ -157,7 +239,11 @@ def serial_test(command, timeout, exchanges=None):
                     complete = step is None
                 else:
                     lines = serial.replace(b"\r\n", b"\n").split(b"\n")[:-1]
-                    complete = SUCCESS in lines
+                    resource = discovery_line().rstrip(b"\r\n")
+                    if any(line.startswith(b"mini-os: dtb OK") and line != resource for line in lines):
+                        reason = "Incorrect device tree resource confirmation"
+                        break
+                    complete = resource in lines and SUCCESS in lines and lines.index(resource) < lines.index(SUCCESS)
                 if complete:
                     # A successful kernel stays alive. Drain any delayed diagnostics
                     # and reject extra UART output, including duplicate CRLF prompts.
@@ -168,11 +254,14 @@ def serial_test(command, timeout, exchanges=None):
                         confirmed_at = time.monotonic()
                     if time.monotonic() - confirmed_at >= 0.05:
                         success = True
-                        reason = "Serial UART exchanges verified" if interactive else "Serial boot confirmation received"
+                        reason = ("Expected DTB failure verified" if expected_failure is not None else
+                                  "Serial UART exchanges verified" if interactive else "Serial boot confirmation received")
                         break
             else:
                 if interactive and step is not None:
                     reason = f"Timed out waiting for UART response during {step[0]}"
+    except (OSError, RuntimeError, ValueError) as error:
+        reason = str(error)
     finally:
         stop_process(process)
         if process.stdin is not None:
@@ -193,6 +282,41 @@ def uart_test(command, timeout=10):
     return serial_test(command, timeout, uart_exchanges())
 
 
+def fdt_test(command, timeout=10):
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("Serial deadline must be positive")
+    deadline = time.monotonic() + timeout
+    output, diagnostics = bytearray(), bytearray()
+    last_pid = 0
+    for name in ("128 MiB discovery", "256 MiB discovery and UART", "corrupt DTB rejection"):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return BootResult(False, f"Timed out during {name}", bytes(output), bytes(diagnostics), last_pid)
+        scenario = list(command)
+        if name.startswith("256"):
+            scenario[scenario.index("-m") + 1] = "256M"
+            result = serial_test(scenario, remaining, uart_exchanges(256))
+        elif name.startswith("corrupt"):
+            with tempfile.TemporaryDirectory(prefix="mini-os-fdt-", dir="/tmp") as directory:
+                path = Path(directory) / "qmp.sock"
+                # This scenario requires one deliberate reset after re-registering the loader.
+                if "-no-reboot" in scenario:
+                    scenario.remove("-no-reboot")
+                scenario.extend(["-S", "-qmp", f"unix:{path},server=on,wait=off", "-device",
+                                 "loader,id=dtb-corruption,addr=0x40000000,data=0,data-len=4"])
+                result = serial_test(scenario, remaining,
+                                     expected_failure=b"mini-os: boot FAIL: dtb bad magic", qmp_path=path)
+        else:
+            result = serial_test(scenario, remaining, [next(uart_exchanges())])
+        output.extend(result.stdout)
+        diagnostics.extend(result.stderr)
+        last_pid = result.pid
+        if not result.success:
+            return BootResult(False, f"{name}: {result.reason}", bytes(output), bytes(diagnostics), last_pid)
+    return BootResult(True, "Device tree discovery, RAM variation, UART, and rejection verified",
+                      bytes(output), bytes(diagnostics), last_pid)
+
+
 def qemu_command(image, executable):
     if not image.is_file():
         raise RuntimeError(f"Missing kernel image: {image}; run kernel-build first.")
@@ -204,7 +328,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -218,7 +342,8 @@ def main():
             return 130
         finally:
             stop_process(process)
-    result = (uart_test if args.action == "uart-test" else boot_test)(command, args.timeout)
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test}[args.action]
+    result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
         print(result.stderr.decode(errors="replace"), end="", file=sys.stderr)

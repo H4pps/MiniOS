@@ -7,7 +7,7 @@ qemu = test_boot_runner.qemu
 
 
 # This fake console implements editing independently of the runner's cases.
-CONSOLE = r'''
+CONSOLE = 'os.write(1, ' + repr(qemu.discovery_line()) + ')\n' + r'''
 os.write(1, b"mini-os: boot OK\r\nmini-os: uart ready\r\nmini-os> ")
 line = bytearray()
 reject = False
