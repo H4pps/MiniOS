@@ -11,6 +11,7 @@ add_executable(mini_os_kernel
   src/arch/aarch64/boot/start.S
   src/arch/aarch64/cpu.cpp
   src/platform/qemu_virt/console.cpp
+  src/platform/qemu_virt/boot_resources.cpp
   src/kernel/boot.cpp
   src/kernel/console.cpp)
 set_target_properties(mini_os_kernel PROPERTIES OUTPUT_NAME kernel SUFFIX .elf)

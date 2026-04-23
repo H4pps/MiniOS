@@ -9,8 +9,9 @@ namespace {
 volatile uint64_t initialized_probe = 0x123456789abcdef0;
 volatile uint64_t zeroed_probe;
 
-[[noreturn]] void fail(const char *reason) {
+[[noreturn]] void fail(const char *reason, const char *category = "") {
     platform::early_write("mini-os: boot FAIL: ");
+    platform::early_write(category);
     platform::early_write(reason);
     platform::early_write("\n");
     arch::halt();
@@ -33,6 +34,9 @@ extern "C" [[noreturn]] void kernel_entry() {
     size_t aligned = 0;
     if (!mini_os_align_up(4097, 4096, &aligned) || aligned != 8192) {
         fail("alignment utility");
+    }
+    if (const char *reason = platform::initialize_discovered_resources()) {
+        fail(reason, "dtb ");
     }
     platform::early_write("mini-os: boot OK\n");
     kernel::run_console();
