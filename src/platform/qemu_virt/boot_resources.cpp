@@ -1,12 +1,15 @@
 #include "mini_os/platform.h"
 #include "mini_os/resources.h"
 
+// These external names are supplied by the linker script, not C++ definitions.
+// NOLINTBEGIN(bugprone-reserved-identifier)
 extern "C" {
 extern const uint8_t __dtb_start[];
 extern const uint8_t __dtb_end[];
 extern const uint8_t __image_start[];
 extern const uint8_t __image_end[];
 }
+// NOLINTEND(bugprone-reserved-identifier)
 
 namespace {
 void hex(uint64_t value) {

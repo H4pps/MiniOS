@@ -52,6 +52,8 @@ class Cursor {
     size_t depth_;
     Node stack_[32];
 };
+// Borrows a validated blob; keep its bytes alive and unchanged during lookup.
+// All offsets and values are decoded bytewise, so input buffers may be unaligned.
 class View {
   public:
     View()

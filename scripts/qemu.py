@@ -181,11 +181,11 @@ def serial_test(command, timeout, exchanges=None, expected_failure=None, qmp_pat
     interactive = exchanges is not None
     steps = iter(exchanges) if interactive else None
     step = next(steps, None) if interactive else None
+    deadline = time.monotonic() + timeout
     process = subprocess.Popen(command, stdin=subprocess.PIPE if interactive else None,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     success = False
     reason = "Timed out waiting for serial confirmation"
-    deadline = time.monotonic() + timeout
     sent = 0
     cursor = 0
     confirmed_at = None
