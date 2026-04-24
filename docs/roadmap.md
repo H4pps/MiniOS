@@ -25,9 +25,10 @@ verification and relevant host tests; a successful build alone is insufficient.
 ## Kernel milestones
 
 Work through these milestones in order. The first kernel boot is verified locally
-in debug and release builds. PL011 receive, editable serial input, and UART/RAM
-device-tree discovery are verified natively and in ARM64/AMD64 containers.
-**Next milestone: CPU/system-register inspection.**
+in debug and release builds. PL011 receive, the editable monitor, UART/RAM/CPU
+device-tree discovery, and CPU inspection are verified natively and in
+ARM64/AMD64 containers.
+**Next milestone: exception vectors and fault diagnostics.**
 
 - [x] **Boot + linker script**
   - [x] Separate host and freestanding AArch64 CMake builds and presets.
@@ -42,7 +43,7 @@ device-tree discovery are verified natively and in ARM64/AMD64 containers.
   - [x] Implement polling receive with per-byte error flags and hardware-error clearing.
   - [x] Test the shared driver with host register fixtures, including NUL and all error combinations.
   - [x] Add a bounded ASCII line editor with Backspace/Delete, CRLF suppression, and rejection recovery.
-  - [x] Enter the editable serial console after boot confirmation; keep command dispatch deferred.
+  - [x] Enter the editable serial console after boot confirmation.
   - [x] Verify debug/release serial input, editing, boundaries, overflow, and recovery under QEMU.
   - [x] Verify bidirectional runner failures, fragmented output, deadlines, diagnostics, and process cleanup.
 - [x] **Device Tree UART/RAM discovery**
@@ -54,10 +55,16 @@ device-tree discovery are verified natively and in ARM64/AMD64 containers.
   - [x] Test malformed trees and non-default resources under host sanitizers.
   - [x] Verify 128/256 MiB discovery, editable UART input, and corrupted-DTB rejection in both kernel presets.
   - [x] Run native, ARM64 Docker, and emulated AMD64 Docker checks, including ELF inspection.
-- [ ] **CPU/system-register inspection**
-  - [ ] Discover CPU nodes and topology from the device tree.
-  - [ ] Add AArch64 CPU and system-register inspection interfaces.
-  - [ ] Verify readable inspection output through the serial console.
+- [x] **CPU/system-register inspection**
+  - [x] Discover up to eight CPU identities and DT availability, including disabled CPUs.
+  - [x] Validate affinity cells, duplicate identities, capacity, and the enabled boot CPU match.
+  - [x] Add read-only AArch64 identity, exception-level, interrupt-mask, and MMU/cache inspection.
+  - [x] Test pure decoding, inventory discovery, command parsing, and report formatting on the host.
+  - [x] Verify Cortex-A53 with one/four CPUs and Cortex-A57 with one CPU in both kernel presets.
+- [x] **Basic interactive monitor CLI**
+  - [x] Add allocation-free parsing and dispatch for `help`, `cpu`, and explicit `echo`.
+  - [x] Preserve line editing, overflow rejection, receive-error cancellation, and prompt recovery.
+  - [x] Verify commands, invalid arguments, unknown names, and serial editing natively and in both Docker architectures.
 - [ ] **Exception handling**
   - [ ] Implement AArch64 exception vectors and diagnostic handlers.
   - [ ] Trigger a controlled exception and verify the reported context.
@@ -74,9 +81,10 @@ device-tree discovery are verified natively and in ARM64/AMD64 containers.
 - [ ] **MMU**
   - [ ] Implement AArch64 page tables and memory-management interfaces.
   - [ ] Verify address translation and controlled page faults under QEMU.
-- [ ] **Interactive monitor CLI**
-  - [ ] Add command parsing and dispatch to the generic kernel layer.
-  - [ ] Test parsing on the host and verify an interactive serial session.
+- [ ] **Further CPU discovery and startup**
+  - [ ] Discover socket/cluster/core/thread hierarchy from `cpu-map`.
+  - [ ] Implement secondary CPU startup and track actual online state.
+  - [ ] Decode architectural CPU feature registers.
 - [ ] **Scheduler**
   - [ ] Separate generic scheduling policy from AArch64 context switching.
   - [ ] Test policy on the host and verify multiple tasks under QEMU.
@@ -94,5 +102,5 @@ device-tree discovery are verified natively and in ARM64/AMD64 containers.
   - [ ] Verify reports against controlled workloads under QEMU.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot/UART/DTB tests, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART/DTB/monitor tests, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.

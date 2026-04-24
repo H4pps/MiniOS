@@ -1,21 +1,23 @@
 # mini-os
 
 A freestanding C17 / C++20 kernel for **AArch64 / ARMv8-A on QEMU `virt`**.
-It boots at EL1, discovers the PL011 UART and RAM from QEMU's device tree,
-checks its startup state, and enters an editable serial console:
+It boots at EL1, discovers the PL011 UART, RAM, and CPU inventory from QEMU's device tree,
+checks its startup state, and enters an editable serial monitor:
 
 ```text
 mini-os: dtb OK uart=0x0000000009000000 clock=24000000 ram=0x0000000040000000 size=0x0000000008000000
 mini-os: boot OK
 mini-os: uart ready
-mini-os> hello
+mini-os> echo hello
 echo: hello
 mini-os>
 ```
 
 Host builds provide a native demo and GoogleTest tests for hardware-independent
 code, including the C alignment API, bounded line editor, FDT parser, and pure
-platform resource discovery. Register fixtures exercise the same PL011 implementation used by the kernel. Architecture code
+platform resource discovery, CPU register decoding, command parsing, and report
+formatting. Register fixtures exercise the same PL011 implementation used by
+the kernel. Architecture code
 lives in `src/arch/aarch64/`, platform code in `src/platform/qemu_virt/`, drivers in
 `src/drivers/`, and generic code in `src/kernel/`. See [AGENTS.md](AGENTS.md),
 [architecture guidance](docs/architecture.md), and the [roadmap](docs/roadmap.md).
@@ -164,13 +166,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, and DTB tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, and monitor tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -216,10 +218,24 @@ Run `./scripts/dev.sh kernel-run` or `docker compose run --rm dev kernel-run`,
 then type at `mini-os> `. Accepted printable ASCII characters echo immediately.
 Backspace and Delete erase the last character; Enter accepts CR, LF, or CRLF
 without submitting twice. Unsupported control bytes and non-ASCII input are
-ignored. Nonempty lines print `echo: <line>`; empty lines simply show a fresh
-prompt. Commands, history, and cursor movement are future work.
+ignored. Empty or space-only lines simply show a fresh prompt. Commands are
+lowercase and case-sensitive:
 
-The buffer holds at most 127 characters plus a terminating NUL. The next
+| Command | Result |
+| --- | --- |
+| `help` | List `help`, `cpu`, and `echo [text]` |
+| `cpu` | Report DT CPU inventory and the boot CPU's current identity and state |
+| `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
+
+Leading spaces and spaces separating a command from its arguments are ignored.
+`help` and `cpu` accept trailing spaces but reject arguments with `usage: help`
+or `usage: cpu`. Unknown names print `mini-os: unknown command: <name>`.
+`echo` accepts an empty argument. There is no quoting, escaping, command chaining,
+history, or cursor movement; quote characters in echo text are literal.
+
+
+The buffer holds at most 127 characters for the entire command plus a terminating
+NUL (`echo ` leaves room for 122 text characters). Rejected lines never dispatch. The next
 printable character rings one bell and rejects the entire line. Further input,
 including deletion, is discarded until Enter; the console reports
 `mini-os: line too long` and recovers. A framing, parity, break, or overrun error
@@ -259,7 +275,8 @@ with interrupts and DMA disabled; the platform converts newlines to CRLF.
 The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
 for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
-CPU/GIC discovery, interrupts, MMU setup, EL2/EL3 transitions, command dispatch,
+CPU hierarchy/GIC discovery, secondary CPU startup, exceptions, interrupts,
+MMU setup, EL2/EL3 transitions,
 and scheduling remain later milestones.
 
 Interactive execution and tests share this fixed emulator configuration:
@@ -299,6 +316,24 @@ BSS and stack; the linker retains its 128 MiB budget even with larger RAM.
 Invalid or missing resources print `mini-os: boot FAIL: dtb <reason>` through
 the bootstrap console and halt without boot success.
 
+CPU discovery requires `/cpus` with one- or two-cell addresses and zero size
+cells. It keeps at most eight direct CPU nodes, including disabled CPUs, sorted
+by MPIDR affinity, and identifies the enabled boot CPU. A single `reg` value per
+CPU is supported; reserved bits, duplicate affinities/properties, missing boot
+CPU, and excess capacity fail boot with `mini-os: boot FAIL: dtb cpu <reason>`.
+Compatible lists are validated fully and may be inherited from `/cpus`. DT
+status absent/`ok`/`okay` means enabled; other statuses are disabled. The binding
+follows the [Arm CPU binding](https://raw.githubusercontent.com/torvalds/linux/master/Documentation/devicetree/bindings/arm/cpus.yaml).
+
+`cpu` reports DT availability, not secondary CPU online state. Only the boot
+CPU's registers are sampled: MIDR_EL1, MPIDR_EL1, CurrentEL, DAIF, and SCTLR_EL1.
+The report shows implementer/part/variant/revision, Aff3–Aff0, EL, interrupt masks,
+and MMU/cache enable state. Cortex-A53/A57 names come from the hardware identity;
+unknown identities still show raw fields. Registers are read without changing
+configuration or starting secondary CPUs. `cpu-map`, shared-cache topology,
+PSCI startup, and feature-register decoding remain deferred. Hex output is
+lowercase and fixed-width; counts and decoded components are decimal.
+
 The boot runner requires the exact resource confirmation followed by the exact
 complete boot success line on serial stdout within 10 seconds. Failure markers,
 premature exit, missing tools/images, and timeouts
@@ -313,11 +348,17 @@ across normal 128 MiB discovery, 256 MiB discovery with every UART exchange, and
 corrupted-magic rejection. For corruption it starts paused, uses QMP to
 re-register a data-loader device after the DTB ROM reset handler, resets, and
 resumes. This scenario omits `-no-reboot` to allow that deliberate reset; normal
-runs retain it. No extra host tool is required. Fake-process tests cover
+runs retain it. `kernel.monitor` uses one ten-second deadline for Cortex-A53
+with one/four CPUs and Cortex-A57 with one CPU. It verifies help, repeated CPU
+reports, raw/decoded field agreement, usage errors, unknown commands, echo, and
+prompt recovery. Normal runs keep the default Cortex-A53/single-CPU arguments.
+No extra host tool is required. Fake-process tests cover
 fragmented output,
 bidirectional exchanges, incorrect/preloaded responses, closed stdin, early exit,
 timeouts, stderr draining, QMP failures, expected rejection, and
-terminate/kill/reap cleanup. An independent ELF
+terminate/kill/reap cleanup, fragmented CPU reports, and incorrect counts/state.
+Runner modules have separate CTest registrations with twenty-second timeouts.
+An independent ELF
 check verifies architecture, entry address, load segments, stack layout, and
 absence of runtime imports.
 
@@ -331,7 +372,7 @@ absence of runtime imports.
   packages are pinned by `builtin-baseline`.
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
-  `check-host`; the kernel job analyzes and boot/UART/DTB-tests both kernel presets.
+  `check-host`; the kernel job analyzes and boot/UART/DTB/monitor-tests both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
