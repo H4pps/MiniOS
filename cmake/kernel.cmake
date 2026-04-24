@@ -11,6 +11,9 @@ target_link_libraries(mini_os_resources PRIVATE mini_os_kernel_options)
 add_executable(mini_os_kernel
   src/arch/aarch64/boot/start.S
   src/arch/aarch64/cpu.cpp
+  src/arch/aarch64/vectors.S
+  src/arch/aarch64/faults.S
+  src/arch/aarch64/exceptions.cpp
   src/platform/qemu_virt/console.cpp
   src/platform/qemu_virt/boot_resources.cpp
   src/kernel/boot.cpp

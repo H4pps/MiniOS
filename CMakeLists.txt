@@ -75,7 +75,7 @@ add_library(mini_os_cpu STATIC src/arch/aarch64/cpu_decode.cpp src/arch/aarch64/
 target_include_directories(mini_os_cpu PUBLIC include)
 target_link_libraries(mini_os_cpu PRIVATE mini_os_options)
 
-add_library(mini_os_core STATIC src/kernel/alignment.c src/kernel/line_editor.cpp src/kernel/fdt.cpp src/kernel/text_writer.cpp src/kernel/monitor.cpp)
+add_library(mini_os_core STATIC src/kernel/alignment.c src/kernel/line_editor.cpp src/kernel/fdt.cpp src/kernel/text_writer.cpp src/kernel/monitor.cpp src/kernel/diagnostics.cpp)
 target_include_directories(mini_os_core PUBLIC include)
 target_link_libraries(mini_os_core PRIVATE mini_os_cpu mini_os_options)
 

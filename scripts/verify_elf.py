@@ -14,7 +14,7 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def inspect(image):
+def inspect(image, verbose=True):
     data = image.read_bytes()
     require(data[:7] == b"\x7fELF\x02\x01\x01", "Expected ELF64 little-endian image")
     header = struct.unpack_from("<HHIQQQIHHHHHH", data, 16)
@@ -72,7 +72,19 @@ def inspect(image):
     require(symbols["__stack_top"] - symbols["__stack_bottom"] == 65536, "Expected separate 64 KiB stack")
     require(symbols["__stack_top"] % 16 == 0, "Stack top must be 16-byte aligned")
     require(symbols["__image_end"] <= RAM_END, "Kernel exceeds RAM")
-    print(f"ELF verified: AArch64, entry {entry:#x}, 3 static load segments, 64 KiB stack, no runtime imports")
+    vectors = "mini_os_exception_vectors"
+    require(vectors in symbols and "mini_os_exception_vectors_end" in symbols, "Missing exception vector table")
+    start, end = symbols[vectors], symbols["mini_os_exception_vectors_end"]
+    require(start % 2048 == 0 and end - start == 2048, "Invalid exception vector table layout")
+    require(any(low <= start < end <= high and flags == 5 for low, high, flags in loads), "Exception vectors are not executable")
+    for index in range(16):
+        require(symbols.get(f"mini_os_vector_{index}") == start + index * 128, "Invalid exception vector slot")
+    for kind in ("brk", "undef"):
+        site = symbols.get(f"mini_os_fault_{kind}_site")
+        require(site is not None and site % 4 == 0 and any(low <= site < high and flags == 5 for low, high, flags in loads), "Missing or invalid fault site")
+    if verbose:
+        print(f"ELF verified: AArch64, entry {entry:#x}, 3 static load segments, 64 KiB stack, no runtime imports, 16 exception vectors")
+    return symbols
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ SECTIONS {
         KEEP(*(.text.boot))
         *(.text .text.*)
     } > RAM :text
+    .vectors : ALIGN(2048) { KEEP(*(.vectors)) } > RAM :text
     .rodata : ALIGN(4096) { *(.rodata .rodata.*) } > RAM :rodata
     .data : ALIGN(4096) { *(.data .data.*) } > RAM :data
     .bss (NOLOAD) : ALIGN(8) {
@@ -45,3 +46,6 @@ SECTIONS {
 ASSERT(SIZEOF(.unsupported_runtime) == 0, "Kernel requires unsupported constructors, destructors, or TLS")
 ASSERT((__stack_top & 15) == 0, "Kernel stack must be 16-byte aligned")
 ASSERT(__image_end <= ORIGIN(RAM) + LENGTH(RAM), "Kernel exceeds QEMU RAM")
+
+ASSERT((ADDR(.vectors) & 2047) == 0, "Exception vectors must be 2 KiB aligned")
+ASSERT(SIZEOF(.vectors) == 2048, "Expected sixteen 128-byte vectors")

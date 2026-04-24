@@ -1,6 +1,7 @@
 #include "mini_os/alignment.h"
 #include "mini_os/arch.h"
 #include "mini_os/console.h"
+#include "mini_os/exception.h"
 #include "mini_os/platform.h"
 
 #include <stdint.h>
@@ -24,6 +25,9 @@ extern "C" [[noreturn]] void kernel_entry() {
     }
     if (arch::current_exception_level() != 1) {
         fail("expected EL1");
+    }
+    if (!arch::install_exception_vectors()) {
+        fail("exception vector installation");
     }
     if (initialized_probe != 0x123456789abcdef0) {
         fail("initialized data");
