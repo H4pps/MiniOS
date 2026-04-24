@@ -1,11 +1,16 @@
 #include "mini_os/console.h"
 
 #include "mini_os/line_editor.h"
+#include "mini_os/monitor.h"
 #include "mini_os/platform.h"
 
+namespace {
+void put_character(void *, char character) { platform::early_putc(character); }
+} // namespace
 namespace kernel {
 [[noreturn]] void run_console() {
     LineEditor editor;
+    TextWriter writer(put_character, nullptr);
     platform::early_write("mini-os: uart ready\nmini-os> ");
     for (;;) {
         const auto input = platform::early_read();
@@ -30,10 +35,13 @@ namespace kernel {
             continue;
         case EditAction::submitted:
             platform::early_putc('\n');
-            if (editor.length() != 0) {
-                platform::early_write("echo: ");
-                platform::early_write(editor.text());
-                platform::early_putc('\n');
+            {
+                const auto command = parse_command({editor.text(), editor.length()});
+                if (command.kind == CommandKind::cpu) {
+                    render_cpu(writer, platform::cpu_inventory(), arch::read_cpu_snapshot());
+                } else {
+                    render_text_command(writer, command);
+                }
             }
             break;
         case EditAction::rejected_too_long:

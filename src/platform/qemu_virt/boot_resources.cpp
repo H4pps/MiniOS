@@ -1,5 +1,8 @@
+#include "mini_os/arch.h"
+#include "mini_os/cpus.h"
 #include "mini_os/platform.h"
 #include "mini_os/resources.h"
+#include "mini_os/text_writer.h"
 
 // These external names are supplied by the linker script, not C++ definitions.
 // NOLINTBEGIN(bugprone-reserved-identifier)
@@ -12,28 +15,12 @@ extern const uint8_t __image_end[];
 // NOLINTEND(bugprone-reserved-identifier)
 
 namespace {
-void hex(uint64_t value) {
-    constexpr char digits[] = "0123456789abcdef";
-    platform::early_write("0x");
-    for (unsigned shift = 64; shift != 0;) {
-        shift -= 4;
-        platform::early_putc(digits[(value >> shift) & 0xfU]);
-    }
-}
-void decimal(uint32_t value) {
-    char digits[10];
-    size_t used = 0;
-    do {
-        digits[used++] = static_cast<char>('0' + value % 10);
-        value /= 10;
-    } while (value != 0);
-    while (used != 0) {
-        platform::early_putc(digits[--used]);
-    }
-}
+constinit platform::CpuInventory saved_cpus{0, 0, platform::max_cpus, {}};
+void put_character(void *, char character) { platform::early_putc(character); }
 } // namespace
 
 namespace platform {
+const CpuInventory &cpu_inventory() { return saved_cpus; }
 const char *initialize_discovered_resources() {
     const auto dtb_base = reinterpret_cast<uintptr_t>(__dtb_start);
     const auto dtb_end = reinterpret_cast<uintptr_t>(__dtb_end);
@@ -54,18 +41,24 @@ const char *initialize_discovered_resources() {
     if (error != ResourceError::none) {
         return error_text(error);
     }
+    const auto cpu_error =
+        discover_cpus(view, arch::cpu_affinity(arch::read_cpu_snapshot().mpidr), saved_cpus);
+    if (cpu_error != CpuDiscoveryError::none) {
+        return error_text(cpu_error);
+    }
     if (!initialize_discovered_console(resources)) {
         return "UART initialization failed";
     }
-    early_write("mini-os: dtb OK uart=");
-    hex(resources.uart_base);
-    early_write(" clock=");
-    decimal(resources.uart_clock_hz);
-    early_write(" ram=");
-    hex(resources.ram_base);
-    early_write(" size=");
-    hex(resources.ram_size);
-    early_putc('\n');
+    kernel::TextWriter writer(put_character, nullptr);
+    writer.write("mini-os: dtb OK uart=");
+    writer.hex(resources.uart_base);
+    writer.write(" clock=");
+    writer.decimal(resources.uart_clock_hz);
+    writer.write(" ram=");
+    writer.hex(resources.ram_base);
+    writer.write(" size=");
+    writer.hex(resources.ram_size);
+    writer.put('\n');
     return nullptr;
 }
 } // namespace platform
