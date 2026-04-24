@@ -18,7 +18,8 @@ void TextWriter::write(TextSpan text) {
         put(text.data[i]);
     }
 }
-void TextWriter::hex(uint64_t value, unsigned digits) {
+void TextWriter::hex(uint64_t value, HexWidth width) {
+    const unsigned digits = width.digits;
     if (digits == 0 || digits > 16) {
         return;
     }

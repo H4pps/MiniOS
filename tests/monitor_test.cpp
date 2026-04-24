@@ -56,17 +56,17 @@ TEST(TextWriter, NumericWidthsAndBoundaries) {
     writer.put(' ');
     writer.hex(UINT64_MAX);
     writer.put(' ');
-    writer.hex(UINT64_MAX, 8);
+    writer.hex(UINT64_MAX, {8});
     writer.put(' ');
-    writer.hex(0x41, 2);
+    writer.hex(0x41, {2});
     writer.put(' ');
-    writer.hex(0xd03, 3);
+    writer.hex(0xd03, {3});
     writer.put(' ');
     writer.decimal(0);
     writer.put(' ');
     writer.decimal(UINT32_MAX);
-    writer.hex(1, 0);
-    writer.hex(1, 17);
+    writer.hex(1, {0});
+    writer.hex(1, {17});
     EXPECT_EQ(output, "0x0000000000000000 0xffffffffffffffff 0xffffffff 0x41 0xd03 0 4294967295");
 }
 TEST(Monitor, CpuReportIsExactAndDistinguishesDtAvailability) {

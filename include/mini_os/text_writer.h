@@ -8,6 +8,9 @@ struct TextSpan {
     size_t size;
     bool equals(const char *text) const;
 };
+struct HexWidth {
+    unsigned digits;
+};
 class TextWriter {
   public:
     using Sink = void (*)(void *, char);
@@ -15,7 +18,7 @@ class TextWriter {
     void put(char character) { sink_(context_, character); }
     void write(const char *text);
     void write(TextSpan text);
-    void hex(uint64_t value, unsigned digits = 16);
+    void hex(uint64_t value, HexWidth width = {16});
     void decimal(uint32_t value);
 
   private:
