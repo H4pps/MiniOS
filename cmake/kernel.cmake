@@ -38,12 +38,18 @@ if(BUILD_TESTING)
   add_test(NAME kernel.fdt
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
       fdt-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
-  set_tests_properties(kernel.boot kernel.uart kernel.fdt PROPERTIES TIMEOUT 20)
+  add_test(NAME kernel.monitor
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
+      monitor-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
+  set_tests_properties(kernel.boot kernel.uart kernel.fdt kernel.monitor PROPERTIES TIMEOUT 20)
   add_test(NAME kernel.elf
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/verify_elf.py"
       "$<TARGET_FILE:mini_os_kernel>")
-  add_test(NAME tools.boot_runner
-    COMMAND "${Python3_EXECUTABLE}" -m unittest discover
-      -s "${PROJECT_SOURCE_DIR}/tests/python" -p "test_*.py")
-  set_tests_properties(kernel.elf tools.boot_runner PROPERTIES TIMEOUT 20)
+  foreach(protocol IN ITEMS boot uart fdt monitor)
+    add_test(NAME tools.${protocol}_runner
+      COMMAND "${Python3_EXECUTABLE}" -m unittest discover
+        -s "${PROJECT_SOURCE_DIR}/tests/python" -p "test_${protocol}_runner.py")
+    set_tests_properties(tools.${protocol}_runner PROPERTIES TIMEOUT 20)
+  endforeach()
+  set_tests_properties(kernel.elf PROPERTIES TIMEOUT 20)
 endif()

@@ -6,6 +6,7 @@ import json
 import math
 from dataclasses import dataclass
 import os
+import re
 from pathlib import Path
 import selectors
 import shutil
@@ -57,17 +58,17 @@ def uart_exchanges(memory_mib=128):
     """Send small fresh exchanges, pacing printable input by its immediate echo."""
     yield "readiness", b"", discovery_line(memory_mib) + SUCCESS + b"\r\nmini-os: uart ready\r\n" + PROMPT
     cases = [
-        (b"first\n", b"first"),
-        (b"first\n", b"first"),
-        (b"ab\x08c\x7fd\r\n", b"ad"),
-        (b"cr\r", b"cr"),
-        (b"lf\n", b"lf"),
+        (b"echo first\n", b"first"),
+        (b"echo first\n", b"first"),
+        (b"echo ab\x08c\x7fd\r\n", b"ad"),
+        (b"echo cr\r", b"cr"),
+        (b"echo lf\n", b"lf"),
         (b"\x08\x7f\n", b""),
         (b"\r\n", b""),
-        (b"\x00\x01\x1b\t\x80\xffok\n", b"ok"),
-        (b"x" * 127 + b"\n", b"x" * 127),
-        (b"x" * 128 + b"discard\x08\x7f\r\n", None),
-        (b"recovered\n", b"recovered"),
+        (b"\x00\x01\x1b\t\x80\xffecho ok\n", b"ok"),
+        (b"echo " + b"x" * 122 + b"\n", b"x" * 122),
+        (b"echo " + b"x" * 123 + b"discard\x08\x7f\r\n", None),
+        (b"echo recovered\n", b"recovered"),
     ]
     for index, (payload, line) in enumerate(cases):
         length = 0
@@ -225,12 +226,16 @@ def serial_test(command, timeout, exchanges=None, expected_failure=None, qmp_pat
                 elif interactive:
                     if step is not None:
                         name, payload, expected = step
-                        fresh = serial[cursor:cursor + len(expected)]
-                        if not expected.startswith(fresh):
-                            reason = f"Incorrect UART response during {name}: expected {expected!r}, received {fresh!r}"
-                            break
-                        if sent == len(payload) and len(fresh) == len(expected):
-                            cursor += len(expected)
+                        if callable(expected):
+                            matched = expected(serial[cursor:])
+                        else:
+                            fresh = serial[cursor:cursor + len(expected)]
+                            if not expected.startswith(fresh):
+                                reason = f"Incorrect UART response during {name}: expected {expected!r}, received {fresh!r}"
+                                break
+                            matched = len(expected) if len(fresh) == len(expected) else None
+                        if sent == len(payload) and matched is not None:
+                            cursor += matched
                             if len(serial) != cursor:
                                 reason = f"Incorrect UART response during {name}: unsolicited output {serial[cursor:]!r}"
                                 break
@@ -317,6 +322,97 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
+HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n"
+
+
+def cpu_report_matcher(model, count):
+    """Validate a complete report and cross-check decoded fields against raw registers."""
+    def match(data):
+        prefix = b"\r\ncpu: discovered="
+        if len(data) < len(prefix) and prefix.startswith(data):
+            return None
+        if not data.startswith(prefix):
+            raise ValueError("Incorrect CPU report prefix")
+        end = data.find(PROMPT)
+        if end < 0:
+            return None
+        lines = data[2:end].split(b"\r\n")
+        if lines[-1] != b"" or len(lines) != count + 7:
+            raise ValueError("Incorrect CPU report length")
+        def require(condition, detail):
+            if not condition:
+                raise ValueError(f"Incorrect CPU report: {detail}")
+        require(lines[0] == f"cpu: discovered={count} enabled={count} boot=0".encode(), "inventory counts")
+        for index in range(count):
+            expected = (f"cpu[{index}]: affinity=0x{index:016x} dt-status=enabled "
+                        f"boot={'yes' if index == 0 else 'no'} compatible=arm,{model}").encode()
+            require(lines[index + 1] == expected, "CPU identity or boot match")
+        identity = re.fullmatch(rb"cpu: model=(Cortex-A(?:53|57)) implementer=0x([0-9a-f]{2}) part=0x([0-9a-f]{3}) variant=([0-9]+) revision=([0-9]+)", lines[count + 1])
+        registers = re.fullmatch(rb"cpu: MIDR_EL1=0x([0-9a-f]{8}) MPIDR_EL1=0x([0-9a-f]{16})", lines[count + 2])
+        masks = re.fullmatch(rb"cpu: DAIF=0x([0-9a-f]{16}) D=([01]) A=([01]) I=([01]) F=([01])", lines[count + 4])
+        control = re.fullmatch(rb"cpu: SCTLR_EL1=0x([0-9a-f]{16}) MMU=(on|off) D-cache=(on|off) I-cache=(on|off)", lines[count + 5])
+        # Five fixed report lines follow the inventory rows, plus the trailing empty line.
+        require(identity is not None and registers is not None and masks is not None and control is not None, "register formatting")
+        midr, mpidr = (int(value, 16) for value in registers.groups())
+        part = 0xd03 if model == "cortex-a53" else 0xd07
+        require(identity[1] == (b"Cortex-A53" if part == 0xd03 else b"Cortex-A57"), "model")
+        require(int(identity[2], 16) == (midr >> 24) == 0x41 and
+                int(identity[3], 16) == ((midr >> 4) & 0xfff) == part and
+                int(identity[4]) == ((midr >> 20) & 15) and int(identity[5]) == (midr & 15), "MIDR decoding")
+        require(mpidr & 0xff00ffffff == 0, "boot affinity")
+        require(lines[count + 3] == b"cpu: EL=1 affinity=0:0:0:0", "execution level or affinity")
+        daif = int(masks[1], 16)
+        require(daif & 0x3c0 == 0x3c0 and all(int(masks[index + 2]) == ((daif >> (9 - index)) & 1) for index in range(4)), "interrupt masks")
+        sctlr = int(control[1], 16)
+        require(sctlr & 0x1005 == 0 and all(control[index + 2] == (b"on" if sctlr & (1 << bit) else b"off") for index, bit in enumerate((0, 2, 12))), "MMU or cache controls")
+        return end + len(PROMPT)
+    return match
+
+
+def monitor_exchanges(model, count):
+    yield next(uart_exchanges())
+    cases = [
+        (b"help", b"\r\n" + HELP + PROMPT),
+        (b"cpu", cpu_report_matcher(model, count)),
+        (b" cpu  ", cpu_report_matcher(model, count)),
+        (b"help x", b"\r\nusage: help\r\n" + PROMPT),
+        (b"cpu x", b"\r\nusage: cpu\r\n" + PROMPT),
+        (b"CPU", b"\r\nmini-os: unknown command: CPU\r\n" + PROMPT),
+        (b"unknown", b"\r\nmini-os: unknown command: unknown\r\n" + PROMPT),
+        (b"", b"\r\n" + PROMPT),
+        (b"   ", b"\r\n" + PROMPT),
+        (b"echo", b"\r\necho: \r\n" + PROMPT),
+        (b" echo   hello  world  ", b"\r\necho: hello  world  \r\n" + PROMPT),
+        (b"echo recovered", b"\r\necho: recovered\r\n" + PROMPT),
+    ]
+    for payload, response in cases:
+        for byte in payload:
+            yield "monitor character", bytes([byte]), bytes([byte])
+        yield "monitor submission", b"\n", response
+
+
+def monitor_test(command, timeout=10):
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("Serial deadline must be positive")
+    deadline = time.monotonic() + timeout
+    output, diagnostics = bytearray(), bytearray()
+    last_pid = 0
+    for model, count in (("cortex-a53", 1), ("cortex-a53", 4), ("cortex-a57", 1)):
+        name = f"{model}, {count} CPU(s)"
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return BootResult(False, f"Timed out during {name}", bytes(output), bytes(diagnostics), last_pid)
+        scenario = list(command)
+        scenario[scenario.index("-cpu") + 1] = model
+        scenario[scenario.index("-smp") + 1] = str(count)
+        result = serial_test(scenario, remaining, monitor_exchanges(model, count))
+        output.extend(result.stdout); diagnostics.extend(result.stderr); last_pid = result.pid
+        if not result.success:
+            return BootResult(False, f"{name}: {result.reason}", bytes(output), bytes(diagnostics), last_pid)
+    return BootResult(True, "CPU inventory, register inspection, and monitor commands verified",
+                      bytes(output), bytes(diagnostics), last_pid)
+
+
 def qemu_command(image, executable):
     if not image.is_file():
         raise RuntimeError(f"Missing kernel image: {image}; run kernel-build first.")
@@ -328,7 +424,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -342,7 +438,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:

@@ -28,7 +28,11 @@ while True:
         if reject:
             response += b"mini-os: line too long\r\n"
         elif line:
-            response += b"echo: " + bytes(line) + b"\r\n"
+            command, _, arguments = bytes(line).lstrip(b" ").partition(b" ")
+            if command == b"echo":
+                response += b"echo: " + arguments.lstrip(b" ") + b"\r\n"
+            else:
+                response += b"mini-os: unknown command: " + command + b"\r\n"
         response += b"mini-os> "
         line.clear()
         reject = False
