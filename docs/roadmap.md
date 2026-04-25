@@ -26,9 +26,9 @@ verification and relevant host tests; a successful build alone is insufficient.
 
 Work through these milestones in order. The first kernel boot is verified locally
 in debug and release builds. PL011 receive, the editable monitor, UART/RAM/CPU
-device-tree discovery, CPU inspection, and fatal exception diagnostics are verified
+device-tree discovery, CPU inspection, and fatal exception diagnostics, and GICv3 IRQ delivery are verified
 natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
-**Next milestone: GICv3 discovery, initialization, and interrupt dispatch.**
+**Next milestone: recurring ARM Generic Timer interrupts.**
 
 - [x] **Boot + linker script**
   - [x] Separate host and freestanding AArch64 CMake builds and presets.
@@ -70,10 +70,12 @@ natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
   - [x] Capture general-purpose registers, exception state, and original stack; render fatal diagnostics.
   - [x] Verify breakpoint/undefined faults on Cortex-A53/A57, including exact ELF addresses and all register sentinels.
   - [x] Pass native, ARM64 Docker, and emulated AMD64 checks: 65 host tests per configuration and 11 CTests per kernel preset.
-- [ ] **GICv3**
-  - [ ] Discover GIC resources and interrupt descriptions from the device tree.
-  - [ ] Implement interrupt-controller initialization and interrupt dispatch.
-  - [ ] Verify interrupt delivery and acknowledgement under QEMU.
+- [x] **GICv3**
+  - [x] Discover and validate GIC resources, phandles, redistributor geometry, and boot affinity.
+  - [x] Initialize Group 1 delivery and a bounded handler table; leave unregistered sources disabled.
+  - [x] Return from EL1h IRQs with restored integer registers, NZCV, SP, ELR, and SPSR.
+  - [x] Verify repeated SGI delivery, acknowledgement, and monitor recovery on A53/A57.
+  - [x] Pass native, ARM64, and emulated AMD64 checks: 73 host tests/configuration and 13 CTests/kernel preset.
 - [ ] **ARM Generic Timer**
   - [ ] Implement the architectural timer and connect its interrupt handler.
   - [ ] Verify recurring timer interrupts under QEMU.

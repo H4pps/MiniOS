@@ -166,13 +166,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, and exception tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, and IRQ tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -226,6 +226,7 @@ lowercase and case-sensitive:
 | `help` | List commands, including deliberate fault triggers |
 | `cpu` | Report DT CPU inventory and the boot CPU's current identity and state |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
+| `irq [test]` | Inspect GIC/IRQ counters or test a self-interrupt and context restoration |
 | `fault brk` | Trigger a breakpoint, report CPU context, and halt |
 | `fault undef` | Execute an undefined instruction, report CPU context, and halt |
 
@@ -278,7 +279,8 @@ with interrupts and DMA disabled; the platform converts newlines to CRLF.
 The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
 for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
-CPU hierarchy/GIC discovery, secondary CPU startup, exception recovery, interrupts,
+CPU hierarchy discovery, secondary CPU startup, synchronous exception recovery,
+interrupt-driven UART reception,
 MMU setup, EL2/EL3 transitions,
 and scheduling remain later milestones.
 
@@ -353,7 +355,8 @@ re-register a data-loader device after the DTB ROM reset handler, resets, and
 resumes. This scenario omits `-no-reboot` to allow that deliberate reset; normal
 runs retain it. `kernel.monitor` uses one ten-second deadline for Cortex-A53
 with one/four CPUs and Cortex-A57 with one CPU. It verifies help, repeated CPU
-reports, raw/decoded field agreement, usage errors, unknown commands, echo, and
+reports, raw/decoded field agreement (including the unmasked foreground IRQ state),
+usage errors, unknown commands, echo, and
 prompt recovery. `kernel.exception` invokes `fault-test`, exercising both deliberate
 faults on Cortex-A53 and Cortex-A57 in separate emulators within one ten-second
 deadline. It verifies the vector, syndrome, exact ELF fault-site address, saved
@@ -371,6 +374,31 @@ Runner modules have separate CTest registrations with twenty-second timeouts.
 An independent ELF
 check verifies architecture, entry address, load segments, stack layout, exception
 table alignment/size/slots, executable fault sites, and absence of runtime imports.
+
+## GICv3 interrupts
+
+The boot CPU's GIC distributor and redistributor region come from one enabled
+root-level `arm,gic-v3` node with three interrupt cells. The driver supports a
+single redistributor region with a 128 KiB stride, finds the boot frame by CPU
+affinity, and bounds hardware-ready polling. Unsupported layouts, overlapping
+UART/RAM resources, invalid phandles, or missing hardware fail startup.
+The current QEMU configuration uses a single security state; other GIC security
+configurations, ITS/LPI delivery, and secondary CPU initialization are deferred.
+
+`irq` reports discovered controller addresses, implemented interrupt capacity,
+delivered IRQs, and self-SGI count. `irq test` sends SGI 0 to the boot CPU and
+prints `irq: test OK` only after verifying delivery and restoration of x0–x30,
+NZCV flags, and SP. Invalid arguments produce `usage: irq [test]`. The monitor
+continues after a successful test. `kernel.irq` repeats this protocol for A53
+with one/four described CPUs and A57 with one CPU; fake processes test wrong
+counts/resources, fragmentation, failures, and cleanup.
+
+Only registered sources are enabled. Architectural spurious IDs return without
+EOI; real unregistered interrupts report their ID and halt. The CPU interface
+uses combined EOI/deactivation, and handlers run with IRQ nesting disabled.
+Entry/return assembly preserves the complete integer context, ELR, and SPSR.
+Foreground snapshots briefly mask and restore IRQs. UART reception remains
+polling, with UART interrupt delivery disabled.
 
 ## Fatal exceptions
 
@@ -405,7 +433,8 @@ reporting halts without attempting another report.
 Diagnostics require an intact stack and working polling UART, and become
 available after bootstrap UART initialization and the EL1 check. There is no
 emergency stack, exception recovery/return, stack-corruption guarantee, lower-EL
-execution, or interrupt delivery in this milestone. Interrupts remain masked.
+execution, or recovery from fatal exceptions. Current-EL/SP_EL1 IRQs return through `ERET`;
+other exception paths halt. D/A/F remain masked, while foreground IRQs are enabled.
 
 ## Quality and dependencies
 
