@@ -32,7 +32,8 @@ TEST(Monitor, ParserBorrowsArgumentsAndHonorsSpacing) {
 TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
     EXPECT_EQ(response("help  "), "commands:\n  help         show commands\n  cpu          show "
                                   "CPU inventory and boot registers\n  echo [text]  echo text\n"
-                                  "  fault brk|undef  trigger a fatal exception\n");
+                                  "  fault brk|undef  trigger a fatal exception\n  irq [test]   "
+                                  "inspect or test interrupts\n");
     EXPECT_EQ(response("help x"), "usage: help\n");
     EXPECT_EQ(response("cpu x"), "usage: cpu\n");
     EXPECT_EQ(response("CPU x"), "mini-os: unknown command: CPU\n");
@@ -114,4 +115,14 @@ TEST(Monitor, FaultCommandsRequireExactlyOneKnownArgument) {
         EXPECT_EQ(response(line), "usage: fault brk|undef\n") << line;
     }
     EXPECT_EQ(response("Fault brk"), "mini-os: unknown command: Fault\n");
+}
+
+TEST(Monitor, IrqParsingAndLargeCounters) {
+    EXPECT_EQ(parse("irq  ").kind, kernel::CommandKind::irq);
+    EXPECT_EQ(parse(" irq test  ").kind, kernel::CommandKind::irq_test);
+    EXPECT_EQ(response("irq x"), "usage: irq [test]\n");
+    std::string output;
+    kernel::TextWriter writer(append, &output);
+    writer.decimal(UINT64_MAX);
+    EXPECT_EQ(output, "18446744073709551615");
 }

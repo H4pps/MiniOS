@@ -2,6 +2,7 @@
 #include "mini_os/arch.h"
 #include "mini_os/console.h"
 #include "mini_os/exception.h"
+#include "mini_os/interrupt.h"
 #include "mini_os/platform.h"
 
 #include <stdint.h>
@@ -42,6 +43,10 @@ extern "C" [[noreturn]] void kernel_entry() {
     if (const char *reason = platform::initialize_discovered_resources()) {
         fail(reason, "dtb ");
     }
+    if (const auto *reason = platform::initialize_interrupts()) {
+        fail(reason);
+    }
+    arch::enable_irq();
     platform::early_write("mini-os: boot OK\n");
     kernel::run_console();
 }

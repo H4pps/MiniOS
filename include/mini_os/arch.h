@@ -31,6 +31,13 @@ CpuSnapshot read_cpu_snapshot();
 CpuInfo decode_cpu_snapshot(const CpuSnapshot &snapshot);
 uint64_t cpu_affinity(uint64_t mpidr);
 uint32_t current_exception_level();
+uint64_t mask_irq();
+void restore_irq(uint64_t state);
+void enable_irq();
+bool initialize_gic_cpu();
+uint32_t acknowledge_irq();
+void end_irq(uint32_t id);
+void send_self_sgi(uint64_t affinity);
 [[noreturn]] void halt();
 } // namespace arch
 

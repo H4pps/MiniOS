@@ -12,6 +12,9 @@ target_link_libraries(mini_os_resources PRIVATE mini_os_kernel_options)
 add_executable(mini_os_kernel
   src/arch/aarch64/boot/start.S
   src/arch/aarch64/cpu.cpp
+  src/arch/aarch64/irq.cpp
+  src/arch/aarch64/irq_probe.S
+  src/platform/qemu_virt/interrupts.cpp
   src/arch/aarch64/vectors.S
   src/arch/aarch64/faults.S
   src/arch/aarch64/exceptions.cpp
@@ -21,7 +24,7 @@ add_executable(mini_os_kernel
   src/kernel/console.cpp)
 set_target_properties(mini_os_kernel PROPERTIES OUTPUT_NAME kernel SUFFIX .elf)
 target_link_libraries(mini_os_kernel PRIVATE
-  mini_os_core mini_os_pl011 mini_os_resources mini_os_options mini_os_kernel_options)
+  mini_os_core mini_os_pl011 mini_os_resources mini_os_gic mini_os_options mini_os_kernel_options)
 set(KERNEL_LINKER_SCRIPT "${PROJECT_SOURCE_DIR}/src/platform/qemu_virt/kernel.ld")
 set_property(TARGET mini_os_kernel APPEND PROPERTY LINK_DEPENDS "${KERNEL_LINKER_SCRIPT}")
 target_link_options(mini_os_kernel PRIVATE

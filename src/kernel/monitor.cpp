@@ -34,6 +34,14 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::cpu;
     } else if (command.name.equals("echo")) {
         command.kind = CommandKind::echo;
+    } else if (command.name.equals("irq")) {
+        auto argument = command.arguments;
+        while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
+            --argument.size;
+        }
+        command.kind = argument.size == 0        ? CommandKind::irq
+                       : argument.equals("test") ? CommandKind::irq_test
+                                                 : CommandKind::usage;
     } else if (command.name.equals("fault")) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
@@ -54,6 +62,8 @@ Command parse_command(TextSpan line) {
 void render_text_command(TextWriter &writer, const Command &command) {
     switch (command.kind) {
     case CommandKind::empty:
+    case CommandKind::irq:
+    case CommandKind::irq_test:
     case CommandKind::cpu:
     case CommandKind::fault_brk:
     case CommandKind::fault_undef:
@@ -61,7 +71,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::help:
         writer.write("commands:\n  help         show commands\n  cpu          show CPU inventory "
                      "and boot registers\n  echo [text]  echo text\n"
-                     "  fault brk|undef  trigger a fatal exception\n");
+                     "  fault brk|undef  trigger a fatal exception\n  irq [test]   inspect or test "
+                     "interrupts\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");
@@ -76,6 +87,9 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::usage:
         writer.write("usage: ");
         writer.write(command.name);
+        if (command.name.equals("irq")) {
+            writer.write(" [test]");
+        }
         if (command.name.equals("fault")) {
             writer.write(" brk|undef");
         }

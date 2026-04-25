@@ -19,7 +19,7 @@ for index in range(count):
 report += f'cpu: model={"Cortex-A53" if part == "d03" else "Cortex-A57"} implementer=0x41 part=0x{part} variant={variant} revision={revision}\r\n'
 report += f'cpu: MIDR_EL1=0x{midr} MPIDR_EL1=0x0000000080000000\r\n'
 report += 'cpu: EL=1 affinity=0:0:0:0\r\n'
-report += 'cpu: DAIF=0x00000000000003c0 D=1 A=1 I=1 F=1\r\n'
+report += 'cpu: DAIF=0x0000000000000340 D=1 A=1 I=0 F=1\r\n'
 report += 'cpu: SCTLR_EL1=0x0000000000c50838 MMU=off D-cache=off I-cache=off\r\n'
 line = bytearray()
 while True:
@@ -35,7 +35,7 @@ while True:
     if command in (b'cpu', b'help') and arguments:
         response += b'usage: ' + command + b'\r\n'
     elif command == b'cpu': response += report.encode()
-    elif command == b'help': response += b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n'
+    elif command == b'help': response += b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n'
     elif command == b'fault': response += b'usage: fault brk|undef\r\n'
     elif command == b'echo': response += b'echo: ' + arguments + b'\r\n'
     elif command: response += b'mini-os: unknown command: ' + command + b'\r\n'
@@ -70,7 +70,7 @@ class MonitorRunnerTests(unittest.TestCase):
 
     def test_incorrect_counts_and_decoded_fields(self):
         for old, new in (("enabled={count}", "enabled=0"), ("revision={revision}", "revision=9"),
-                         ("EL=1", "EL=2"), ("I=1 F=1", "I=0 F=1"),
+                         ("EL=1", "EL=2"), ("I=0 F=1", "I=1 F=1"),
                          ("MMU=off", "MMU=on"), ("boot=0", "boot=1")):
             with self.subTest(field=old):
                 result = self.run_fake(CONSOLE.replace(old, new))

@@ -1,6 +1,7 @@
 #include "mini_os/arch.h"
 #include "mini_os/diagnostics.h"
 #include "mini_os/exception.h"
+#include "mini_os/interrupt.h"
 #include "mini_os/platform.h"
 
 extern "C" {
@@ -26,7 +27,10 @@ bool install_exception_vectors() {
     mini_os_trigger_undef();
 }
 } // namespace arch
-extern "C" [[noreturn]] void mini_os_exception_handler(const arch::ExceptionFrame *frame) {
+extern "C" void mini_os_exception_handler(const arch::ExceptionFrame *frame) {
+    if (frame->vector == 5 && platform::dispatch_interrupt()) {
+        return;
+    }
     kernel::TextWriter writer(put_character, nullptr);
     kernel::render_exception(writer, *frame);
     arch::halt();

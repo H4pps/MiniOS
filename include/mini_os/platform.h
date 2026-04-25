@@ -5,6 +5,7 @@
 
 namespace platform {
 struct PlatformResources;
+const PlatformResources &platform_resources();
 bool initialize_early_console();
 bool initialize_discovered_console(const PlatformResources &resources);
 // Returns a diagnostic on failure, nullptr after discovery and console handover.

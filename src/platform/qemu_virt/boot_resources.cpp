@@ -15,11 +15,13 @@ extern const uint8_t __image_end[];
 // NOLINTEND(bugprone-reserved-identifier)
 
 namespace {
+platform::PlatformResources saved_resources;
 constinit platform::CpuInventory saved_cpus{0, 0, platform::max_cpus, {}};
 void put_character(void *, char character) { platform::early_putc(character); }
 } // namespace
 
 namespace platform {
+const PlatformResources &platform_resources() { return saved_resources; }
 const CpuInventory &cpu_inventory() { return saved_cpus; }
 const char *initialize_discovered_resources() {
     const auto dtb_base = reinterpret_cast<uintptr_t>(__dtb_start);
@@ -46,6 +48,13 @@ const char *initialize_discovered_resources() {
     if (cpu_error != CpuDiscoveryError::none) {
         return error_text(cpu_error);
     }
+    saved_resources.uart_base = resources.uart_base;
+    saved_resources.uart_size = resources.uart_size;
+    saved_resources.uart_clock_hz = resources.uart_clock_hz;
+    saved_resources.ram_base = resources.ram_base;
+    saved_resources.ram_size = resources.ram_size;
+    saved_resources.dtb.data = resources.dtb.data;
+    saved_resources.dtb.size = resources.dtb.size;
     if (!initialize_discovered_console(resources)) {
         return "UART initialization failed";
     }

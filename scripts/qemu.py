@@ -328,7 +328,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n"
+HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n"
 
 
 def cpu_report_matcher(model, count):
@@ -368,7 +368,7 @@ def cpu_report_matcher(model, count):
         require(mpidr & 0xff00ffffff == 0, "boot affinity")
         require(lines[count + 3] == b"cpu: EL=1 affinity=0:0:0:0", "execution level or affinity")
         daif = int(masks[1], 16)
-        require(daif & 0x3c0 == 0x3c0 and all(int(masks[index + 2]) == ((daif >> (9 - index)) & 1) for index in range(4)), "interrupt masks")
+        require(daif & 0x3c0 == 0x340 and all(int(masks[index + 2]) == ((daif >> (9 - index)) & 1) for index in range(4)), "interrupt masks")
         sctlr = int(control[1], 16)
         require(sctlr & 0x1005 == 0 and all(control[index + 2] == (b"on" if sctlr & (1 << bit) else b"off") for index, bit in enumerate((0, 2, 12))), "MMU or cache controls")
         return end + len(PROMPT)
@@ -423,6 +423,65 @@ def monitor_test(command, timeout=10):
 
 
 
+def command_exchange(name, payload, response):
+    for byte in payload:
+        yield name + " character", bytes([byte]), bytes([byte])
+    yield name + " submission", b"\n", response
+
+
+def scenario_test(command, timeout, scenarios, exchanges):
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("Serial deadline must be positive")
+    deadline = time.monotonic() + timeout
+    output, diagnostics = bytearray(), bytearray()
+    last_pid = 0
+    for model, count, memory in scenarios:
+        name = f"{model}, {count} CPU(s), {memory} MiB"
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return BootResult(False, f"Timed out during {name}", bytes(output), bytes(diagnostics), last_pid)
+        scenario = list(command)
+        for flag, value in (("-cpu", model), ("-smp", str(count)), ("-m", f"{memory}M")):
+            scenario[scenario.index(flag) + 1] = value
+        result = serial_test(scenario, remaining, exchanges(memory))
+        output.extend(result.stdout); diagnostics.extend(result.stderr); last_pid = result.pid
+        if not result.success:
+            return BootResult(False, f"{name}: {result.reason}", bytes(output), bytes(diagnostics), last_pid)
+    return BootResult(True, "All serial scenarios verified", bytes(output), bytes(diagnostics), last_pid)
+
+
+CPU_SCENARIOS = (("cortex-a53", 1, 128), ("cortex-a53", 4, 128), ("cortex-a57", 1, 128))
+
+
+def irq_exchanges(memory=128):
+    yield next(uart_exchanges(memory))
+    previous = [-1, -1]
+    def report(expected_sgi):
+        def match(data):
+            if PROMPT not in data:
+                return None
+            result = re.fullmatch(rb"\r\nirq: distributor=0x0000000008000000 redistributor=0x00000000080a0000 limit=([0-9]+) delivered=([0-9]+) self-sgi=([0-9]+)\r\nmini-os> ", data)
+            if result is None:
+                raise ValueError("Incorrect IRQ report formatting or resources")
+            limit, delivered, sgi = (int(value) for value in result.groups())
+            if not (32 <= limit <= 1020 and sgi == expected_sgi and delivered >= sgi and
+                    delivered >= previous[0] and sgi >= previous[1]):
+                raise ValueError("Incorrect IRQ counts")
+            previous[:] = [delivered, sgi]
+            return len(data)
+        return match
+    yield from command_exchange("IRQ status", b"irq", report(0))
+    for number in range(1, 4):
+        yield from command_exchange("IRQ integrity", b"irq test  ", b"\r\nirq: test OK\r\n" + PROMPT)
+        yield from command_exchange("IRQ status", b"irq", report(number))
+        yield from command_exchange("IRQ recovery", b"echo after IRQ", b"\r\necho: after IRQ\r\n" + PROMPT)
+    yield from command_exchange("IRQ usage", b"irq test extra", b"\r\nusage: irq [test]\r\n" + PROMPT)
+
+
+def irq_test(command, timeout=10):
+    return scenario_test(command, timeout, CPU_SCENARIOS, irq_exchanges)
+
+
 def fault_report_matcher(kind, symbols):
     """Match a terminal report, checking captured context against the ELF and sentinels."""
     def match(data):
@@ -448,7 +507,7 @@ def fault_report_matcher(kind, symbols):
         require(state is not None, "state formatting")
         elr, spsr = (int(value, 16) for value in state.groups())
         require(elr == symbols[f"mini_os_fault_{kind}_site"], "faulting instruction address")
-        require(spsr & 0x1f == 5 and spsr & 0x3c0 == 0x3c0, "saved execution state or masks")
+        require(spsr & 0x1f == 5 and spsr & 0x3c0 == 0x340, "saved execution state or masks")
         stack = re.fullmatch(rb"sp=0x([0-9a-f]{16}) far\(raw\)=0x([0-9a-f]{16})", lines[3])
         require(stack is not None, "SP or raw FAR formatting")
         sp = int(stack[1], 16)
@@ -502,7 +561,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -516,7 +575,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:

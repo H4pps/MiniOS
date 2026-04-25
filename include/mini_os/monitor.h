@@ -9,6 +9,8 @@ enum class CommandKind : uint8_t {
     help,
     cpu,
     echo,
+    irq,
+    irq_test,
     fault_brk,
     fault_undef,
     unknown,

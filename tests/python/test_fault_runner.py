@@ -25,7 +25,7 @@ while True:
     elr = 0x40200100 if breakpoint else 0x40200200
     report = f'\r\nmini-os: exception vector=current-spx-sync reason={reason}\r\n'
     report += f'esr=0x{esr:016x} ec=0x{esr >> 26:02x} il=1 iss=0x{esr & 0x1ffffff:07x}\r\n'
-    report += f'elr=0x{elr:016x} spsr=0x00000000600003c5\r\n'
+    report += f'elr=0x{elr:016x} spsr=0x0000000060000345\r\n'
     report += 'sp=0x000000004021fff0 far(raw)=0xffffffffffffffff\r\n'
     for index in range(31): report += f'x{index:02d}=0x{0x100 + index:016x}\r\n'
     report += 'mini-os: halted\r\n'
@@ -60,7 +60,7 @@ class FaultRunnerTests(unittest.TestCase):
     def test_incorrect_context_rejected(self):
         fields = (("current-spx-sync", "lower-a64-sync"), ("reason={reason}", "reason=wrong"),
                   ("ec=0x{esr >> 26:02x}", "ec=0x00"), ("elr = 0x40200100", "elr = 0x40200104"),
-                  ("600003c5", "600003c4"), ("600003c5", "60000005"),
+                  ("60000345", "60000344"), ("60000345", "60000005"),
                   ("4021fff0", "4021fff1"), ("4021fff0", "40200000"),
                   ("0x100 + index", "0x200 + index"))
         for old, new in fields:
