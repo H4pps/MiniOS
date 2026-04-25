@@ -166,13 +166,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, and monitor tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, and exception tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -223,9 +223,11 @@ lowercase and case-sensitive:
 
 | Command | Result |
 | --- | --- |
-| `help` | List `help`, `cpu`, and `echo [text]` |
+| `help` | List commands, including deliberate fault triggers |
 | `cpu` | Report DT CPU inventory and the boot CPU's current identity and state |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
+| `fault brk` | Trigger a breakpoint, report CPU context, and halt |
+| `fault undef` | Execute an undefined instruction, report CPU context, and halt |
 
 Leading spaces and spaces separating a command from its arguments are ignored.
 `help` and `cpu` accept trailing spaces but reject arguments with `usage: help`
@@ -252,7 +254,7 @@ and omit `-T`; automated checks use `-T` and open their own emulator input pipe.
 The kernel uses Clang targeting `aarch64-none-elf` and LLD with CMake's Generic
 system. Compiler probes produce static libraries. Kernel code is freestanding,
 uses general registers only and strict alignment (`-mstrict-align`) while the
-MMU is off, and has no exceptions, RTTI, stack protector,
+MMU is off, and has no C++ exceptions, RTTI, stack protector,
 hosted C++ headers, standard-library linkage, or dynamic initialization.
 GoogleTest, vcpkg, macOS SDK configuration, and sanitizers stay in host builds.
 
@@ -261,8 +263,9 @@ first 2 MiB of 128 MiB RAM for QEMU's device tree. Text, read-only data, data,
 and aligned BSS have separate sections; the stack reserves another 64 KiB.
 Linker assertions reject runtime constructors/destructors, TLS, and RAM overflow.
 Architecture startup masks interrupts, selects the stack, clears BSS, and calls
-`kernel_entry`. The entry checks EL1, initialized data, zeroed BSS, and alignment
-before confirming boot, then polls the serial console continuously. Receive
+`kernel_entry`. After initializing the bootstrap UART and checking EL1, the entry
+installs and verifies `VBAR_EL1`, then checks initialized data, zeroed BSS, and
+alignment before confirming boot and polling the serial console continuously. Receive
 interrupts are disabled, so the idle console does not use `WFI`. Failures
 with a working console print `mini-os: boot FAIL: <reason>`.
 
@@ -275,7 +278,7 @@ with interrupts and DMA disabled; the platform converts newlines to CRLF.
 The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
 for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
-CPU hierarchy/GIC discovery, secondary CPU startup, exceptions, interrupts,
+CPU hierarchy/GIC discovery, secondary CPU startup, exception recovery, interrupts,
 MMU setup, EL2/EL3 transitions,
 and scheduling remain later milestones.
 
@@ -351,16 +354,58 @@ resumes. This scenario omits `-no-reboot` to allow that deliberate reset; normal
 runs retain it. `kernel.monitor` uses one ten-second deadline for Cortex-A53
 with one/four CPUs and Cortex-A57 with one CPU. It verifies help, repeated CPU
 reports, raw/decoded field agreement, usage errors, unknown commands, echo, and
-prompt recovery. Normal runs keep the default Cortex-A53/single-CPU arguments.
+prompt recovery. `kernel.exception` invokes `fault-test`, exercising both deliberate
+faults on Cortex-A53 and Cortex-A57 in separate emulators within one ten-second
+deadline. It verifies the vector, syndrome, exact ELF fault-site address, saved
+EL1 state and masks, stack bounds/alignment, and every register sentinel. The
+complete halt report must be followed by a live emulator with no fresh prompt.
+Normal runs keep the default Cortex-A53/single-CPU arguments.
 No extra host tool is required. Fake-process tests cover
 fragmented output,
 bidirectional exchanges, incorrect/preloaded responses, closed stdin, early exit,
 timeouts, stderr draining, QMP failures, expected rejection, and
-terminate/kill/reap cleanup, fragmented CPU reports, and incorrect counts/state.
+terminate/kill/reap cleanup, fragmented CPU/fault reports, incorrect counts/state,
+incomplete fault context, and unexpected prompts after halt. Ordinary protocols
+reject unexpected exception markers.
 Runner modules have separate CTest registrations with twenty-second timeouts.
 An independent ELF
-check verifies architecture, entry address, load segments, stack layout, and
-absence of runtime imports.
+check verifies architecture, entry address, load segments, stack layout, exception
+table alignment/size/slots, executable fault sites, and absence of runtime imports.
+
+## Fatal exceptions
+
+Use `fault brk` or `fault undef` to exercise exception diagnostics. Trailing
+spaces are accepted; missing, unknown, or extra arguments print
+`usage: fault brk|undef` and return to the prompt. Accepted fault commands halt
+the kernel; press **Ctrl-C** to stop QEMU and start another run to continue.
+
+A breakpoint report begins with:
+
+```text
+mini-os: exception vector=current-spx-sync reason=brk
+esr=0x00000000f2000123 ec=0x3c il=1 iss=0x0000123
+```
+
+The remaining lines show ELR_EL1, SPSR_EL1, the original stack pointer, raw
+FAR_EL1, and x00–x30, ending with `mini-os: halted`. Addresses and registers
+use sixteen lowercase hexadecimal digits; EC uses two and ISS seven. Undefined
+instructions report `reason=unknown` (the architectural unknown-reason class).
+FAR is raw because it need not identify an address for these exceptions. IRQ,
+FIQ, and SError reports identify the vector but do not interpret ESR as a
+synchronous syndrome.
+
+The architecture layer provides all sixteen 128-byte vectors in a 2 KiB-aligned
+executable table, following the [Arm exception model](https://documentation-service.arm.com/static/63a065c41d698c4dc521cb1c).
+Entry saves all general-purpose registers before calling C++ and retains both
+entry SP and SP_EL0; pure decoders and the report writer also run in host tests.
+Deliberate triggers seed x0–x30 with distinct values so QEMU checks the actual
+capture, rather than merely recognizing a message. A nested exception during
+reporting halts without attempting another report.
+
+Diagnostics require an intact stack and working polling UART, and become
+available after bootstrap UART initialization and the EL1 check. There is no
+emergency stack, exception recovery/return, stack-corruption guarantee, lower-EL
+execution, or interrupt delivery in this milestone. Interrupts remain masked.
 
 ## Quality and dependencies
 
@@ -372,7 +417,8 @@ absence of runtime imports.
   packages are pinned by `builtin-baseline`.
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
-  `check-host`; the kernel job analyzes and boot/UART/DTB/monitor-tests both kernel presets.
+  `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
+  tests in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 

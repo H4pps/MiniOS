@@ -26,9 +26,9 @@ verification and relevant host tests; a successful build alone is insufficient.
 
 Work through these milestones in order. The first kernel boot is verified locally
 in debug and release builds. PL011 receive, the editable monitor, UART/RAM/CPU
-device-tree discovery, and CPU inspection are verified natively and in
-ARM64/AMD64 containers.
-**Next milestone: exception vectors and fault diagnostics.**
+device-tree discovery, CPU inspection, and fatal exception diagnostics are verified
+natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
+**Next milestone: GICv3 discovery, initialization, and interrupt dispatch.**
 
 - [x] **Boot + linker script**
   - [x] Separate host and freestanding AArch64 CMake builds and presets.
@@ -65,9 +65,11 @@ ARM64/AMD64 containers.
   - [x] Add allocation-free parsing and dispatch for `help`, `cpu`, and explicit `echo`.
   - [x] Preserve line editing, overflow rejection, receive-error cancellation, and prompt recovery.
   - [x] Verify commands, invalid arguments, unknown names, and serial editing natively and in both Docker architectures.
-- [ ] **Exception handling**
-  - [ ] Implement AArch64 exception vectors and diagnostic handlers.
-  - [ ] Trigger a controlled exception and verify the reported context.
+- [x] **Exception handling**
+  - [x] Install and verify all sixteen EL1 vectors; enforce table and frame layout.
+  - [x] Capture general-purpose registers, exception state, and original stack; render fatal diagnostics.
+  - [x] Verify breakpoint/undefined faults on Cortex-A53/A57, including exact ELF addresses and all register sentinels.
+  - [x] Pass native, ARM64 Docker, and emulated AMD64 checks: 65 host tests per configuration and 11 CTests per kernel preset.
 - [ ] **GICv3**
   - [ ] Discover GIC resources and interrupt descriptions from the device tree.
   - [ ] Implement interrupt-controller initialization and interrupt dispatch.
@@ -98,9 +100,10 @@ ARM64/AMD64 containers.
   - [ ] Implement the first required VirtIO device with platform-discovered resources.
   - [ ] Verify device initialization and a complete I/O operation under QEMU.
 - [ ] **Diagnostics/performance tools**
+  - [ ] Add exception recovery and emergency-stack diagnostics.
   - [ ] Expose kernel diagnostics and basic performance measurements.
   - [ ] Verify reports against controlled workloads under QEMU.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot/UART/DTB/monitor tests, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception tests, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.
