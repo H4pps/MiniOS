@@ -322,7 +322,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n"
+HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n"
 
 
 def cpu_report_matcher(model, count):
@@ -377,6 +377,9 @@ def monitor_exchanges(model, count):
         (b" cpu  ", cpu_report_matcher(model, count)),
         (b"help x", b"\r\nusage: help\r\n" + PROMPT),
         (b"cpu x", b"\r\nusage: cpu\r\n" + PROMPT),
+        (b"fault", b"\r\nusage: fault brk|undef\r\n" + PROMPT),
+        (b"fault BRK", b"\r\nusage: fault brk|undef\r\n" + PROMPT),
+        (b"fault brk x", b"\r\nusage: fault brk|undef\r\n" + PROMPT),
         (b"CPU", b"\r\nmini-os: unknown command: CPU\r\n" + PROMPT),
         (b"unknown", b"\r\nmini-os: unknown command: unknown\r\n" + PROMPT),
         (b"", b"\r\n" + PROMPT),

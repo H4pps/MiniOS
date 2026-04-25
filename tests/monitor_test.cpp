@@ -31,7 +31,8 @@ TEST(Monitor, ParserBorrowsArgumentsAndHonorsSpacing) {
 }
 TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
     EXPECT_EQ(response("help  "), "commands:\n  help         show commands\n  cpu          show "
-                                  "CPU inventory and boot registers\n  echo [text]  echo text\n");
+                                  "CPU inventory and boot registers\n  echo [text]  echo text\n"
+                                  "  fault brk|undef  trigger a fatal exception\n");
     EXPECT_EQ(response("help x"), "usage: help\n");
     EXPECT_EQ(response("cpu x"), "usage: cpu\n");
     EXPECT_EQ(response("CPU x"), "mini-os: unknown command: CPU\n");
@@ -102,4 +103,15 @@ TEST(Monitor, UnknownCpuStillReportsRawState) {
               std::string::npos);
     EXPECT_NE(output.find("D=0 A=0 I=0 F=0"), std::string::npos);
     EXPECT_NE(output.find("MMU=off D-cache=off I-cache=off"), std::string::npos);
+}
+
+TEST(Monitor, FaultCommandsRequireExactlyOneKnownArgument) {
+    EXPECT_EQ(parse("fault brk").kind, kernel::CommandKind::fault_brk);
+    EXPECT_EQ(parse("  fault   undef  ").kind, kernel::CommandKind::fault_undef);
+    EXPECT_EQ(response("fault brk"), ""); // Hardware execution belongs to the console adapter.
+    for (const auto *line : {"fault", "fault  ", "fault BRK", "fault unknown", "fault brk x",
+                             "fault undef brk", "fault brk;echo"}) {
+        EXPECT_EQ(response(line), "usage: fault brk|undef\n") << line;
+    }
+    EXPECT_EQ(response("Fault brk"), "mini-os: unknown command: Fault\n");
 }

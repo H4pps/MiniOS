@@ -1,5 +1,6 @@
 #include "mini_os/console.h"
 
+#include "mini_os/exception.h"
 #include "mini_os/line_editor.h"
 #include "mini_os/monitor.h"
 #include "mini_os/platform.h"
@@ -39,6 +40,10 @@ namespace kernel {
                 const auto command = parse_command({editor.text(), editor.length()});
                 if (command.kind == CommandKind::cpu) {
                     render_cpu(writer, platform::cpu_inventory(), arch::read_cpu_snapshot());
+                } else if (command.kind == CommandKind::fault_brk) {
+                    arch::trigger_fault(arch::FaultKind::breakpoint);
+                } else if (command.kind == CommandKind::fault_undef) {
+                    arch::trigger_fault(arch::FaultKind::undefined_instruction);
                 } else {
                     render_text_command(writer, command);
                 }

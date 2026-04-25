@@ -34,6 +34,14 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::cpu;
     } else if (command.name.equals("echo")) {
         command.kind = CommandKind::echo;
+    } else if (command.name.equals("fault")) {
+        auto argument = command.arguments;
+        while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
+            --argument.size;
+        }
+        command.kind = argument.equals("brk")     ? CommandKind::fault_brk
+                       : argument.equals("undef") ? CommandKind::fault_undef
+                                                  : CommandKind::usage;
     } else {
         command.kind = CommandKind::unknown;
     }
@@ -47,10 +55,13 @@ void render_text_command(TextWriter &writer, const Command &command) {
     switch (command.kind) {
     case CommandKind::empty:
     case CommandKind::cpu:
+    case CommandKind::fault_brk:
+    case CommandKind::fault_undef:
         return;
     case CommandKind::help:
         writer.write("commands:\n  help         show commands\n  cpu          show CPU inventory "
-                     "and boot registers\n  echo [text]  echo text\n");
+                     "and boot registers\n  echo [text]  echo text\n"
+                     "  fault brk|undef  trigger a fatal exception\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");
@@ -65,6 +76,9 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::usage:
         writer.write("usage: ");
         writer.write(command.name);
+        if (command.name.equals("fault")) {
+            writer.write(" brk|undef");
+        }
         writer.put('\n');
         return;
     case CommandKind::invalid:

@@ -4,7 +4,17 @@
 #include "mini_os/cpus.h"
 #include "mini_os/text_writer.h"
 namespace kernel {
-enum class CommandKind : uint8_t { empty, help, cpu, echo, unknown, usage, invalid };
+enum class CommandKind : uint8_t {
+    empty,
+    help,
+    cpu,
+    echo,
+    fault_brk,
+    fault_undef,
+    unknown,
+    usage,
+    invalid
+};
 struct Command {
     CommandKind kind;
     TextSpan name;
