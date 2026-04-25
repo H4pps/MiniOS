@@ -75,7 +75,7 @@ add_library(mini_os_cpu STATIC src/arch/aarch64/cpu_decode.cpp src/arch/aarch64/
 target_include_directories(mini_os_cpu PUBLIC include)
 target_link_libraries(mini_os_cpu PRIVATE mini_os_options)
 
-add_library(mini_os_core STATIC src/kernel/alignment.c src/kernel/line_editor.cpp src/kernel/fdt.cpp src/kernel/text_writer.cpp src/kernel/monitor.cpp src/kernel/diagnostics.cpp)
+add_library(mini_os_core STATIC src/kernel/alignment.c src/kernel/line_editor.cpp src/kernel/fdt.cpp src/kernel/text_writer.cpp src/kernel/monitor.cpp src/kernel/diagnostics.cpp src/kernel/interrupt.cpp)
 target_include_directories(mini_os_core PUBLIC include)
 target_link_libraries(mini_os_core PRIVATE mini_os_cpu mini_os_options)
 
@@ -83,9 +83,13 @@ add_library(mini_os_pl011 STATIC src/drivers/uart/pl011/pl011.cpp)
 target_include_directories(mini_os_pl011 PUBLIC include)
 target_link_libraries(mini_os_pl011 PRIVATE mini_os_options)
 
-add_library(mini_os_resources STATIC src/platform/qemu_virt/resources.cpp src/platform/qemu_virt/cpus.cpp)
+add_library(mini_os_resources STATIC src/platform/qemu_virt/resources.cpp src/platform/qemu_virt/cpus.cpp src/platform/qemu_virt/fdt_helpers.cpp src/platform/qemu_virt/gic.cpp)
 target_include_directories(mini_os_resources PUBLIC include)
 target_link_libraries(mini_os_resources PRIVATE mini_os_core mini_os_options)
+
+add_library(mini_os_gic STATIC src/drivers/interrupt/gicv3/gicv3.cpp)
+target_include_directories(mini_os_gic PUBLIC include)
+target_link_libraries(mini_os_gic PRIVATE mini_os_options)
 
 include(CTest)
 if(MINI_OS_BUILD_MODE STREQUAL "host")

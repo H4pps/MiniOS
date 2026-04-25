@@ -19,7 +19,7 @@ class TextWriter {
     void write(const char *text);
     void write(TextSpan text);
     void hex(uint64_t value, HexWidth width = {16});
-    void decimal(uint32_t value);
+    void decimal(uint64_t value);
 
   private:
     Sink sink_;

@@ -30,8 +30,8 @@ void TextWriter::hex(uint64_t value, HexWidth width) {
         put(characters[(value >> shift) & 0xfU]);
     }
 }
-void TextWriter::decimal(uint32_t value) {
-    char digits[10];
+void TextWriter::decimal(uint64_t value) {
+    char digits[20];
     size_t used = 0;
     do {
         digits[used++] = static_cast<char>('0' + value % 10);
