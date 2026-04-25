@@ -44,11 +44,14 @@ if(BUILD_TESTING)
   add_test(NAME kernel.monitor
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
       monitor-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
-  set_tests_properties(kernel.boot kernel.uart kernel.fdt kernel.monitor PROPERTIES TIMEOUT 20)
+  add_test(NAME kernel.exception
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
+      fault-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
+  set_tests_properties(kernel.boot kernel.uart kernel.fdt kernel.monitor kernel.exception PROPERTIES TIMEOUT 20)
   add_test(NAME kernel.elf
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/verify_elf.py"
       "$<TARGET_FILE:mini_os_kernel>")
-  foreach(protocol IN ITEMS boot uart fdt monitor)
+  foreach(protocol IN ITEMS boot uart fdt monitor fault)
     add_test(NAME tools.${protocol}_runner
       COMMAND "${Python3_EXECUTABLE}" -m unittest discover
         -s "${PROJECT_SOURCE_DIR}/tests/python" -p "test_${protocol}_runner.py")

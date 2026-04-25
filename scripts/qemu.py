@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared QEMU configuration and bounded serial boot and input verification."""
+"""Shared QEMU configuration and bounded serial boot, input, and fatal exception verification."""
 
 import argparse
 import json
@@ -16,8 +16,11 @@ import sys
 import tempfile
 import time
 
+from verify_elf import inspect
+
 SUCCESS = b"mini-os: boot OK"
 FAILURE = b"mini-os: boot FAIL:"
+EXCEPTION = b"mini-os: exception"
 QEMU_ARGS = [
     "-machine", "virt-8.2,gic-version=3,secure=off,virtualization=off",
     "-cpu", "cortex-a53", "-accel", "tcg", "-smp", "1", "-m", "128M",
@@ -174,7 +177,7 @@ def inject_dtb_failure(process, path, deadline, selector, output):
                 selector.unregister(control)
 
 
-def serial_test(command, timeout, exchanges=None, expected_failure=None, qmp_path=None):
+def serial_test(command, timeout, exchanges=None, expected_failure=None, qmp_path=None, allow_exception=False):
     """One deadline and continuously drained pipes for boot and UART protocols."""
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("Serial deadline must be positive")
@@ -213,6 +216,9 @@ def serial_test(command, timeout, exchanges=None, expected_failure=None, qmp_pat
                 serial = bytes(output["stdout"])
                 if FAILURE in serial and expected_failure is None:
                     reason = "Kernel reported boot failure"
+                    break
+                if EXCEPTION in serial and not allow_exception:
+                    reason = "Kernel reported unexpected exception"
                     break
                 if process.poll() is not None:
                     reason = f"Emulator exited prematurely ({process.returncode})"
@@ -416,6 +422,75 @@ def monitor_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
+
+def fault_report_matcher(kind, symbols):
+    """Match a terminal report, checking captured context against the ELF and sentinels."""
+    def match(data):
+        prefix = b"\r\nmini-os: exception vector=current-spx-sync reason="
+        if len(data) < len(prefix) and prefix.startswith(data):
+            return None
+        if not data.startswith(prefix):
+            raise ValueError("Incorrect exception report prefix")
+        marker = b"mini-os: halted\r\n"
+        end = data.find(marker)
+        if end < 0:
+            return None
+        lines = data[2:end + len(marker)].split(b"\r\n")[:-1]
+        def require(condition, detail):
+            if not condition:
+                raise ValueError(f"Incorrect exception report: {detail}")
+        require(len(lines) == 36, "length")
+        reason = "brk" if kind == "brk" else "unknown"
+        require(lines[0] == f"mini-os: exception vector=current-spx-sync reason={reason}".encode(), "vector or reason")
+        esr = 0xf2000123 if kind == "brk" else 0x02000000
+        require(lines[1] == f"esr=0x{esr:016x} ec=0x{esr >> 26:02x} il=1 iss=0x{esr & 0x1ffffff:07x}".encode(), "syndrome")
+        state = re.fullmatch(rb"elr=0x([0-9a-f]{16}) spsr=0x([0-9a-f]{16})", lines[2])
+        require(state is not None, "state formatting")
+        elr, spsr = (int(value, 16) for value in state.groups())
+        require(elr == symbols[f"mini_os_fault_{kind}_site"], "faulting instruction address")
+        require(spsr & 0x1f == 5 and spsr & 0x3c0 == 0x3c0, "saved execution state or masks")
+        stack = re.fullmatch(rb"sp=0x([0-9a-f]{16}) far\(raw\)=0x([0-9a-f]{16})", lines[3])
+        require(stack is not None, "SP or raw FAR formatting")
+        sp = int(stack[1], 16)
+        require(symbols["__stack_bottom"] + 304 <= sp <= symbols["__stack_top"] and sp % 16 == 0, "stack address")
+        for index in range(31):
+            require(lines[index + 4] == f"x{index:02d}=0x{0x100 + index:016x}".encode(), f"saved x{index}")
+        require(lines[-1] == b"mini-os: halted", "halt marker")
+        return end + len(marker)
+    return match
+
+
+def fault_exchanges(kind, symbols):
+    yield next(uart_exchanges())
+    for byte in f"fault {kind}  ".encode():
+        yield "fault character", bytes([byte]), bytes([byte])
+    yield "fatal exception", b"\n", fault_report_matcher(kind, symbols)
+
+
+def fault_test(command, timeout=10, symbols=None):
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("Serial deadline must be positive")
+    deadline = time.monotonic() + timeout
+    if symbols is None:
+        symbols = inspect(Path(command[command.index("-kernel") + 1]), verbose=False)
+    output, diagnostics = bytearray(), bytearray()
+    last_pid = 0
+    for model in ("cortex-a53", "cortex-a57"):
+        for kind in ("brk", "undef"):
+            name = f"{model}, fault {kind}"
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return BootResult(False, f"Timed out during {name}", bytes(output), bytes(diagnostics), last_pid)
+            scenario = list(command)
+            scenario[scenario.index("-cpu") + 1] = model
+            result = serial_test(scenario, remaining, fault_exchanges(kind, symbols), allow_exception=True)
+            output.extend(result.stdout); diagnostics.extend(result.stderr); last_pid = result.pid
+            if not result.success:
+                return BootResult(False, f"{name}: {result.reason}", bytes(output), bytes(diagnostics), last_pid)
+    return BootResult(True, "Fatal vectors, syndromes, instruction addresses, and saved registers verified",
+                      bytes(output), bytes(diagnostics), last_pid)
+
+
 def qemu_command(image, executable):
     if not image.is_file():
         raise RuntimeError(f"Missing kernel image: {image}; run kernel-build first.")
@@ -427,7 +502,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -441,7 +516,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
