@@ -26,9 +26,9 @@ verification and relevant host tests; a successful build alone is insufficient.
 
 Work through these milestones in order. The first kernel boot is verified locally
 in debug and release builds. PL011 receive, the editable monitor, UART/RAM/CPU
-device-tree discovery, CPU inspection, and fatal exception diagnostics, and GICv3 IRQ delivery are verified
+device-tree discovery, CPU inspection, and fatal exception diagnostics, GICv3 IRQ delivery, and recurring timer ticks are verified
 natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
-**Next milestone: recurring ARM Generic Timer interrupts.**
+**Next milestone: physical page allocation and reserved memory.**
 
 - [x] **Boot + linker script**
   - [x] Separate host and freestanding AArch64 CMake builds and presets.
@@ -76,9 +76,11 @@ natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
   - [x] Return from EL1h IRQs with restored integer registers, NZCV, SP, ELR, and SPSR.
   - [x] Verify repeated SGI delivery, acknowledgement, and monitor recovery on A53/A57.
   - [x] Pass native, ARM64, and emulated AMD64 checks: 73 host tests/configuration and 13 CTests/kernel preset.
-- [ ] **ARM Generic Timer**
-  - [ ] Implement the architectural timer and connect its interrupt handler.
-  - [ ] Verify recurring timer interrupts under QEMU.
+- [x] **ARM Generic Timer**
+  - [x] Discover physical timer PPI resources and connect the architectural handler.
+  - [x] Rearm absolute deadlines, count missed periods, and expose coherent statistics.
+  - [x] Verify recurring timer progress during console input and SGI tests on A53/A57.
+  - [x] Pass native, ARM64 Docker, and emulated AMD64 checks: 81 host tests/configuration and 15 CTests/kernel preset.
 - [ ] **Physical page allocator**
   - [ ] Track usable RAM and reserve kernel and platform memory regions.
   - [ ] Test allocation, release, exhaustion, and reserved-region boundaries.

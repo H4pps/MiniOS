@@ -166,13 +166,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, and IRQ tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, and timer tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -226,6 +226,7 @@ lowercase and case-sensitive:
 | `help` | List commands, including deliberate fault triggers |
 | `cpu` | Report DT CPU inventory and the boot CPU's current identity and state |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
+| `timer` | Report physical timer frequency, interval, counter, ticks, and missed periods |
 | `irq [test]` | Inspect GIC/IRQ counters or test a self-interrupt and context restoration |
 | `fault brk` | Trigger a breakpoint, report CPU context, and halt |
 | `fault undef` | Execute an undefined instruction, report CPU context, and halt |
@@ -399,6 +400,29 @@ uses combined EOI/deactivation, and handlers run with IRQ nesting disabled.
 Entry/return assembly preserves the complete integer context, ELR, and SPSR.
 Foreground snapshots briefly mask and restore IRQs. UART reception remains
 polling, with UART interrupt delivery disabled.
+
+## ARM Generic Timer
+
+The enabled `arm,armv8-timer` node selects the non-secure physical PPI through
+the discovered GIC. Named descriptions use `phys`; unnamed descriptions use
+standard binding order. Inherited interrupt parents and `interrupts-extended`
+are supported; conflicting layouts or frequency declarations fail boot.
+
+The timer starts before boot confirmation and targets 100 Hz using an interval
+rounded up from `CNTFRQ_EL0 / 100`. Interrupts update counters and the next absolute
+compare deadline without serial output. Late delivery skips elapsed periods in
+one calculation, records missed periods, and rearms before GIC EOI. Counter
+arithmetic assumes observations separated by less than half the 64-bit counter
+range. UART input continues polling.
+
+`timer` takes a coherent snapshot with IRQs briefly masked, then restores the
+foreground state. For QEMU's usual 62.5 MHz counter the report begins
+`timer: frequency=62500000 target-hz=100 interval=625000`. Counts are 64-bit.
+`kernel.timer` checks recurring progress during console exchanges on A53 with
+one/four CPUs and A57 with one CPU, along with SGI delivery and prompt recovery.
+Timing checks require progress rather than exact emulated wall-clock timing.
+Host tests cover discovery, rounding, delayed delivery, wraparound and saturation;
+separate fake processes cover bad reports, stalled counters, diagnostics and cleanup.
 
 ## Fatal exceptions
 
