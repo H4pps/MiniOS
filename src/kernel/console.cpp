@@ -5,6 +5,7 @@
 #include "mini_os/line_editor.h"
 #include "mini_os/monitor.h"
 #include "mini_os/platform.h"
+#include "mini_os/timer.h"
 
 namespace {
 void put_character(void *, char character) { platform::early_putc(character); }
@@ -41,6 +42,8 @@ namespace kernel {
                 const auto command = parse_command({editor.text(), editor.length()});
                 if (command.kind == CommandKind::cpu) {
                     render_cpu(writer, platform::cpu_inventory(), arch::read_cpu_snapshot());
+                } else if (command.kind == CommandKind::timer) {
+                    render_timer(writer, platform::timer_stats());
                 } else if (command.kind == CommandKind::irq) {
                     render_irq(writer, platform::irq_stats());
                 } else if (command.kind == CommandKind::irq_test) {

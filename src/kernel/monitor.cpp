@@ -32,6 +32,8 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::help;
     } else if (command.name.equals("cpu")) {
         command.kind = CommandKind::cpu;
+    } else if (command.name.equals("timer")) {
+        command.kind = CommandKind::timer;
     } else if (command.name.equals("echo")) {
         command.kind = CommandKind::echo;
     } else if (command.name.equals("irq")) {
@@ -53,7 +55,8 @@ Command parse_command(TextSpan line) {
     } else {
         command.kind = CommandKind::unknown;
     }
-    if ((command.kind == CommandKind::help || command.kind == CommandKind::cpu) &&
+    if ((command.kind == CommandKind::help || command.kind == CommandKind::cpu ||
+         command.kind == CommandKind::timer) &&
         command.arguments.size != 0) {
         command.kind = CommandKind::usage;
     }
@@ -62,6 +65,7 @@ Command parse_command(TextSpan line) {
 void render_text_command(TextWriter &writer, const Command &command) {
     switch (command.kind) {
     case CommandKind::empty:
+    case CommandKind::timer:
     case CommandKind::irq:
     case CommandKind::irq_test:
     case CommandKind::cpu:
@@ -72,7 +76,7 @@ void render_text_command(TextWriter &writer, const Command &command) {
         writer.write("commands:\n  help         show commands\n  cpu          show CPU inventory "
                      "and boot registers\n  echo [text]  echo text\n"
                      "  fault brk|undef  trigger a fatal exception\n  irq [test]   inspect or test "
-                     "interrupts\n");
+                     "interrupts\n  timer        inspect timer counters\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");

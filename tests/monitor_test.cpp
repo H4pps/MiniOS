@@ -30,10 +30,11 @@ TEST(Monitor, ParserBorrowsArgumentsAndHonorsSpacing) {
     EXPECT_EQ(parse(" cpu  ").kind, kernel::CommandKind::cpu);
 }
 TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
-    EXPECT_EQ(response("help  "), "commands:\n  help         show commands\n  cpu          show "
-                                  "CPU inventory and boot registers\n  echo [text]  echo text\n"
-                                  "  fault brk|undef  trigger a fatal exception\n  irq [test]   "
-                                  "inspect or test interrupts\n");
+    EXPECT_EQ(response("help  "),
+              "commands:\n  help         show commands\n  cpu          show "
+              "CPU inventory and boot registers\n  echo [text]  echo text\n"
+              "  fault brk|undef  trigger a fatal exception\n  irq [test]   "
+              "inspect or test interrupts\n  timer        inspect timer counters\n");
     EXPECT_EQ(response("help x"), "usage: help\n");
     EXPECT_EQ(response("cpu x"), "usage: cpu\n");
     EXPECT_EQ(response("CPU x"), "mini-os: unknown command: CPU\n");
@@ -125,4 +126,9 @@ TEST(Monitor, IrqParsingAndLargeCounters) {
     kernel::TextWriter writer(append, &output);
     writer.decimal(UINT64_MAX);
     EXPECT_EQ(output, "18446744073709551615");
+}
+
+TEST(Monitor, TimerRejectsArguments) {
+    EXPECT_EQ(parse("timer  ").kind, kernel::CommandKind::timer);
+    EXPECT_EQ(response("timer x"), "usage: timer\n");
 }

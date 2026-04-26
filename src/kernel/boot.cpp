@@ -4,6 +4,7 @@
 #include "mini_os/exception.h"
 #include "mini_os/interrupt.h"
 #include "mini_os/platform.h"
+#include "mini_os/timer.h"
 
 #include <stdint.h>
 
@@ -44,6 +45,9 @@ extern "C" [[noreturn]] void kernel_entry() {
         fail(reason, "dtb ");
     }
     if (const auto *reason = platform::initialize_interrupts()) {
+        fail(reason);
+    }
+    if (const auto *reason = platform::initialize_timer()) {
         fail(reason);
     }
     arch::enable_irq();

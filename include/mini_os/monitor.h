@@ -9,6 +9,7 @@ enum class CommandKind : uint8_t {
     help,
     cpu,
     echo,
+    timer,
     irq,
     irq_test,
     fault_brk,
@@ -23,7 +24,7 @@ struct Command {
     TextSpan arguments;
 };
 Command parse_command(TextSpan line);
-// Text commands need no hardware snapshot. The console routes cpu to render_cpu.
+// The console routes commands requiring live state to their adapters.
 void render_text_command(TextWriter &writer, const Command &command);
 void render_cpu(TextWriter &writer, const platform::CpuInventory &inventory,
                 const arch::CpuSnapshot &snapshot);
