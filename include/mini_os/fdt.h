@@ -42,6 +42,13 @@ struct Event {
     String name;
     Bytes value;
 };
+struct Reservation {
+    uint64_t base, size;
+};
+struct ReservationCursor {
+    size_t offset = 0;
+    bool done = false;
+};
 class Cursor {
   public:
     Cursor() : offset_(0), depth_(0) {}
@@ -62,6 +69,7 @@ class View {
     static Error open(Bytes blob, View &view);
     Bytes blob() const { return {data_, size_}; }
     Error next(Cursor &cursor, Event &event) const;
+    Error next_reservation(ReservationCursor &cursor, Reservation &entry) const;
     Error find_node(String path, Node &node) const;
     Error find_phandle(uint32_t handle, Node &node) const;
     Error property(Node node, const char *name, Bytes &value) const;

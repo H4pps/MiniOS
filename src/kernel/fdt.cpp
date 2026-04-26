@@ -345,6 +345,27 @@ Error View::next(Cursor &cursor, Event &event) const {
     }
     return Error::none;
 }
+Error View::next_reservation(ReservationCursor &cursor, Reservation &entry) const {
+    if (data_ == nullptr)
+        return Error::bad_header;
+    if (cursor.done)
+        return Error::not_found;
+    if (cursor.offset == 0) {
+        uint32_t start = 0;
+        blob().u32(16, start);
+        cursor.offset = start;
+    }
+    if (!fits(cursor.offset, 16, structure_) ||
+        blob().u64(cursor.offset, entry.base) != Error::none ||
+        blob().u64(cursor.offset + 8, entry.size) != Error::none)
+        return Error::bad_reservations;
+    cursor.offset += 16;
+    if (entry.base == 0 && entry.size == 0) {
+        cursor.done = true;
+        return Error::not_found;
+    }
+    return Error::none;
+}
 Error View::parent(Node node, Node &parent_node) const {
     Cursor cursor;
     Event event;
