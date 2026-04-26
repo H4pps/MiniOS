@@ -3,6 +3,7 @@
 #include "mini_os/exception.h"
 #include "mini_os/interrupt.h"
 #include "mini_os/line_editor.h"
+#include "mini_os/memory.h"
 #include "mini_os/monitor.h"
 #include "mini_os/platform.h"
 #include "mini_os/timer.h"
@@ -42,6 +43,11 @@ namespace kernel {
                 const auto command = parse_command({editor.text(), editor.length()});
                 if (command.kind == CommandKind::cpu) {
                     render_cpu(writer, platform::cpu_inventory(), arch::read_cpu_snapshot());
+                } else if (command.kind == CommandKind::mem) {
+                    render_memory(writer, platform::memory_stats());
+                } else if (command.kind == CommandKind::mem_test) {
+                    writer.write(platform::memory_self_test() ? "mem: test OK\n"
+                                                              : "mem: test FAIL\n");
                 } else if (command.kind == CommandKind::timer) {
                     render_timer(writer, platform::timer_stats());
                 } else if (command.kind == CommandKind::irq) {

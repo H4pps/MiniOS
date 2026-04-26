@@ -36,14 +36,16 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::timer;
     } else if (command.name.equals("echo")) {
         command.kind = CommandKind::echo;
-    } else if (command.name.equals("irq")) {
+    } else if ((command.name.equals("irq") || command.name.equals("mem"))) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
             --argument.size;
         }
-        command.kind = argument.size == 0        ? CommandKind::irq
-                       : argument.equals("test") ? CommandKind::irq_test
-                                                 : CommandKind::usage;
+        command.kind =
+            argument.size == 0 ? (command.name.equals("mem") ? CommandKind::mem : CommandKind::irq)
+            : argument.equals("test")
+                ? (command.name.equals("mem") ? CommandKind::mem_test : CommandKind::irq_test)
+                : CommandKind::usage;
     } else if (command.name.equals("fault")) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
@@ -65,6 +67,8 @@ Command parse_command(TextSpan line) {
 void render_text_command(TextWriter &writer, const Command &command) {
     switch (command.kind) {
     case CommandKind::empty:
+    case CommandKind::mem:
+    case CommandKind::mem_test:
     case CommandKind::timer:
     case CommandKind::irq:
     case CommandKind::irq_test:
@@ -76,7 +80,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
         writer.write("commands:\n  help         show commands\n  cpu          show CPU inventory "
                      "and boot registers\n  echo [text]  echo text\n"
                      "  fault brk|undef  trigger a fatal exception\n  irq [test]   inspect or test "
-                     "interrupts\n  timer        inspect timer counters\n");
+                     "interrupts\n  timer        inspect timer counters\n  mem [test]   inspect or "
+                     "test physical pages\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");
@@ -91,7 +96,7 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::usage:
         writer.write("usage: ");
         writer.write(command.name);
-        if (command.name.equals("irq")) {
+        if ((command.name.equals("irq") || command.name.equals("mem"))) {
             writer.write(" [test]");
         }
         if (command.name.equals("fault")) {

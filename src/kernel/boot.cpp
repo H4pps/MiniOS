@@ -3,6 +3,7 @@
 #include "mini_os/console.h"
 #include "mini_os/exception.h"
 #include "mini_os/interrupt.h"
+#include "mini_os/memory.h"
 #include "mini_os/platform.h"
 #include "mini_os/timer.h"
 
@@ -48,6 +49,9 @@ extern "C" [[noreturn]] void kernel_entry() {
         fail(reason);
     }
     if (const auto *reason = platform::initialize_timer()) {
+        fail(reason);
+    }
+    if (const auto *reason = platform::initialize_memory()) {
         fail(reason);
     }
     arch::enable_irq();

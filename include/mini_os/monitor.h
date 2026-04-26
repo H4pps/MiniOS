@@ -10,6 +10,8 @@ enum class CommandKind : uint8_t {
     cpu,
     echo,
     timer,
+    mem,
+    mem_test,
     irq,
     irq_test,
     fault_brk,
