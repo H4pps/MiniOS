@@ -81,7 +81,9 @@ class FdtRunnerTests(unittest.TestCase):
                     "connection.sendall(" + repr(response) + ")\n"
                     + ("connection.close()\n" if not response else "") + "time.sleep(30)\n"
                 )
-                result = self.run_fake(body, timeout=0.5,
+                # Allow Python/QMP startup under AMD64 emulation; the protocol
+                # still has a bounded deadline and the module stays below 20s.
+                result = self.run_fake(body, timeout=1.25,
                     runner=lambda command, timeout: qemu.serial_test(
                         command, timeout, expected_failure=FAILURE, qmp_path=path))
                 self.assertFalse(result.success)
