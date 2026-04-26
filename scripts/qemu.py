@@ -328,7 +328,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n"
+HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n"
 
 
 def cpu_report_matcher(model, count):
@@ -482,6 +482,51 @@ def irq_test(command, timeout=10):
     return scenario_test(command, timeout, CPU_SCENARIOS, irq_exchanges)
 
 
+def serial_pause(seconds):
+    until = [None]
+    def match(data):
+        if data:
+            raise ValueError("Unexpected asynchronous serial output")
+        if until[0] is None:
+            until[0] = time.monotonic() + seconds
+        return 0 if time.monotonic() >= until[0] else None
+    return match
+
+
+def timer_exchanges(memory=128):
+    yield next(uart_exchanges(memory))
+    observed = []
+    def report(data):
+        if PROMPT not in data:
+            return None
+        result = re.fullmatch(rb"\r\ntimer: frequency=([0-9]+) target-hz=100 interval=([0-9]+) counter=([0-9]+) ticks=([0-9]+) missed=([0-9]+)\r\nmini-os> ", data)
+        if result is None:
+            raise ValueError("Incorrect timer report formatting")
+        frequency, interval, counter, ticks, missed = (int(value) for value in result.groups())
+        if not (100 <= frequency <= 0xffffffff and interval == (frequency + 99) // 100 and
+                all(0 <= value <= 0xffffffffffffffff for value in (counter, ticks, missed))):
+            raise ValueError("Incorrect timer frequency or interval")
+        if observed and (frequency != observed[0][0] or counter <= observed[-1][2] or ticks < observed[-1][3] or missed < observed[-1][4]):
+            raise ValueError("Incorrect timer progress")
+        observed.append((frequency, interval, counter, ticks, missed))
+        return len(data)
+    yield from command_exchange("timer baseline", b"timer", report)
+    for _ in range(16):
+        yield "timer wait", b"", serial_pause(0.05)
+        yield from command_exchange("timer progress", b"timer", report)
+        yield from command_exchange("timer console", b"echo ticking", b"\r\necho: ticking\r\n" + PROMPT)
+        if observed[-1][3] >= observed[0][3] + 3:
+            break
+    else:
+        raise ValueError("Timer failed to progress")
+    yield from command_exchange("timer IRQ", b"irq test", b"\r\nirq: test OK\r\n" + PROMPT)
+    yield from command_exchange("timer usage", b"timer x", b"\r\nusage: timer\r\n" + PROMPT)
+
+
+def timer_test(command, timeout=10):
+    return scenario_test(command, timeout, CPU_SCENARIOS, timer_exchanges)
+
+
 def fault_report_matcher(kind, symbols):
     """Match a terminal report, checking captured context against the ELF and sentinels."""
     def match(data):
@@ -561,7 +606,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -575,7 +620,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
