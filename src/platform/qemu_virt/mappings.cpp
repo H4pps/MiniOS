@@ -33,6 +33,19 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
                           overlap(r, l.distributor) || overlap(r, l.redistributors))))
             return "mmu invalid no-map reservation";
     }
+    // Device mappings must not reintroduce an unmapped RAM guard/hole.
+    // Check complete MMIO pages because permissions operate at page granularity.
+    for (unsigned i = 0; i < 3; ++i) {
+        const auto device = i == 0 ? l.uart : i == 1 ? l.distributor : l.redistributors;
+        const auto first = device.base & ~4095ULL;
+        const auto end = (device.base + device.size + 4095) & ~4095ULL;
+        const kernel::MemoryRange pages{first, end - first, false};
+        if (first == 0 || end > arch::identity_limit || overlap(pages, l.ram))
+            return "mmu device overlaps RAM";
+        for (size_t j = 0; j < reservations.count; ++j)
+            if (reservations.ranges[j].no_map && overlap(pages, reservations.ranges[j]))
+                return "mmu device overlaps no-map page";
+    }
     for (uint64_t page = l.ram.base; page < l.ram.base + l.ram.size; page += 4096) {
         if (page == 0 || page == l.guard.base || reservations.excludes(page))
             continue;

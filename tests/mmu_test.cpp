@@ -138,6 +138,15 @@ TEST_F(Tables, RejectsInvalidLayoutNoMapConflictsAndDeviceAliases) {
     invalid.ram.size = arch::identity_limit;
     EXPECT_NE(platform::build_identity_map(tables, invalid, r), nullptr);
     invalid = layout;
+    invalid.uart = invalid.guard;
+    EXPECT_NE(platform::build_identity_map(tables, invalid, r), nullptr);
+    EXPECT_EQ(tables.descriptor(invalid.guard.base), 0U);
+    ASSERT_TRUE(r.add({layout.uart.base + 0x800, 1, true}));
+    invalid = layout;
+    invalid.uart.size = 0x100;
+    EXPECT_NE(platform::build_identity_map(tables, invalid, r), nullptr);
+    r.count = 0;
+    invalid = layout;
     invalid.uart = invalid.distributor;
     EXPECT_NE(platform::build_identity_map(tables, invalid, r), nullptr);
     tables.discard();
