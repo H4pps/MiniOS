@@ -17,6 +17,16 @@ void render_exception(TextWriter &writer, const arch::ExceptionFrame &frame) {
         writer.decimal(info.instruction_length ? 1U : 0U);
         writer.write(" iss=");
         writer.hex(info.iss, {7});
+        if (info.data_abort) {
+            writer.write(" abort=");
+            writer.write(info.abort_reason);
+            writer.write(" dfsc=");
+            writer.hex(info.dfsc, {2});
+            writer.write(" write=");
+            writer.decimal(info.write ? 1U : 0U);
+            writer.write(" far-valid=");
+            writer.decimal(info.far_valid ? 1U : 0U);
+        }
     } else {
         writer.write(" syndrome=not-applicable");
     }

@@ -8,6 +8,8 @@ extern "C" {
 extern const char mini_os_exception_vectors[];
 [[noreturn]] void mini_os_trigger_brk();
 [[noreturn]] void mini_os_trigger_undef();
+[[noreturn]] void mini_os_trigger_unmapped();
+[[noreturn]] void mini_os_trigger_readonly();
 }
 namespace {
 void put_character(void *, char character) { platform::early_putc(character); }
@@ -24,6 +26,10 @@ bool install_exception_vectors() {
     if (kind == FaultKind::breakpoint) {
         mini_os_trigger_brk();
     }
+    if (kind == FaultKind::unmapped)
+        mini_os_trigger_unmapped();
+    if (kind == FaultKind::readonly)
+        mini_os_trigger_readonly();
     mini_os_trigger_undef();
 }
 } // namespace arch

@@ -53,7 +53,10 @@ TEST(Exception, SyndromeMasksAndUnknownClasses) {
         EXPECT_EQ(info.ec, ec);
         EXPECT_TRUE(info.instruction_length);
         EXPECT_EQ(info.iss, 0x1ffffffU);
-        EXPECT_STREQ(info.reason, ec == 0x3c ? "brk" : ec == 0 ? "unknown" : "unrecognized");
+        EXPECT_STREQ(info.reason, ec == 0x24 || ec == 0x25 ? "data-abort"
+                                  : ec == 0x3c             ? "brk"
+                                  : ec == 0                ? "unknown"
+                                                           : "unrecognized");
     }
     frame.esr = 0;
     const auto info = arch::decode_exception(frame);

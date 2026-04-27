@@ -57,3 +57,34 @@ mini_os_fault_undef_site:
 1:  wfi
     b 1b
 .size mini_os_trigger_undef, . - mini_os_trigger_undef
+
+.global mini_os_trigger_unmapped
+.type mini_os_trigger_unmapped, %function
+mini_os_trigger_unmapped:
+    sentinels
+    mov x16, #0x1000
+.global mini_os_fault_unmapped_site
+mini_os_fault_unmapped_site:
+    ldr x0, [x16]
+1:  wfi
+    b 1b
+.size mini_os_trigger_unmapped, . - mini_os_trigger_unmapped
+
+.global mini_os_trigger_readonly
+.type mini_os_trigger_readonly, %function
+mini_os_trigger_readonly:
+    sentinels
+    adrp x16, mini_os_readonly_probe
+    add x16, x16, :lo12:mini_os_readonly_probe
+.global mini_os_fault_readonly_site
+mini_os_fault_readonly_site:
+    str x0, [x16]
+1:  wfi
+    b 1b
+.size mini_os_trigger_readonly, . - mini_os_trigger_readonly
+
+.section .rodata.fault_probe, "a"
+.balign 8
+.global mini_os_readonly_probe
+mini_os_readonly_probe:
+    .quad 0x123456789abcdef0
