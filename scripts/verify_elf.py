@@ -79,7 +79,14 @@ def inspect(image, verbose=True):
     require(any(low <= start < end <= high and flags == 5 for low, high, flags in loads), "Exception vectors are not executable")
     for index in range(16):
         require(symbols.get(f"mini_os_vector_{index}") == start + index * 128, "Invalid exception vector slot")
-    for kind in ("brk", "undef"):
+    for name in ("__text_start","__text_end","__rodata_start","__rodata_end","__stack_guard","__stack_guard_end"):
+        require(name in symbols and symbols[name]%4096==0, "Missing or unaligned permission boundary")
+    require(symbols["__text_start"]==RAM_START and symbols["__text_end"]==symbols["__rodata_start"] and symbols["__rodata_start"]<symbols["__rodata_end"]<=symbols["__bss_start"], "Invalid permission section order")
+    require(symbols["__bss_end"]<=symbols["__stack_guard"] and symbols["__stack_guard_end"]-symbols["__stack_guard"]==4096 and symbols["__stack_guard_end"]==symbols["__stack_bottom"], "Invalid stack guard layout")
+    require(symbols["__stack_top"]%4096==symbols["__image_end"]%4096==0, "Image and stack must end on page boundaries")
+    require(any(low<=symbols["__rodata_start"]<symbols["__rodata_end"]<=high and flags==4 for low,high,flags in loads), "Readonly data permissions are invalid")
+    require(symbols.get("mini_os_readonly_probe",0)>=symbols["__rodata_start"] and symbols.get("mini_os_readonly_probe",0)+8<=symbols["__rodata_end"], "Missing readonly fault target")
+    for kind in ("brk", "undef", "unmapped", "readonly"):
         site = symbols.get(f"mini_os_fault_{kind}_site")
         require(site is not None and site % 4 == 0 and any(low <= site < high and flags == 5 for low, high, flags in loads), "Missing or invalid fault site")
     if verbose:

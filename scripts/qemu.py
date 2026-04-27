@@ -328,7 +328,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test]   inspect or test physical pages\r\n"
+HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test]   inspect or test physical pages\r\n  mmu          inspect mappings and protection\r\n"
 
 
 def cpu_report_matcher(model, count):
@@ -370,7 +370,7 @@ def cpu_report_matcher(model, count):
         daif = int(masks[1], 16)
         require(daif & 0x3c0 == 0x340 and all(int(masks[index + 2]) == ((daif >> (9 - index)) & 1) for index in range(4)), "interrupt masks")
         sctlr = int(control[1], 16)
-        require(sctlr & 0x1005 == 0 and all(control[index + 2] == (b"on" if sctlr & (1 << bit) else b"off") for index, bit in enumerate((0, 2, 12))), "MMU or cache controls")
+        require(sctlr & 0x1005 == 1 and all(control[index + 2] == (b"on" if sctlr & (1 << bit) else b"off") for index, bit in enumerate((0, 2, 12))), "MMU or cache controls")
         return end + len(PROMPT)
     return match
 
@@ -383,9 +383,9 @@ def monitor_exchanges(model, count):
         (b" cpu  ", cpu_report_matcher(model, count)),
         (b"help x", b"\r\nusage: help\r\n" + PROMPT),
         (b"cpu x", b"\r\nusage: cpu\r\n" + PROMPT),
-        (b"fault", b"\r\nusage: fault brk|undef\r\n" + PROMPT),
-        (b"fault BRK", b"\r\nusage: fault brk|undef\r\n" + PROMPT),
-        (b"fault brk x", b"\r\nusage: fault brk|undef\r\n" + PROMPT),
+        (b"fault", b"\r\nusage: fault brk|undef|unmapped|readonly\r\n" + PROMPT),
+        (b"fault BRK", b"\r\nusage: fault brk|undef|unmapped|readonly\r\n" + PROMPT),
+        (b"fault brk x", b"\r\nusage: fault brk|undef|unmapped|readonly\r\n" + PROMPT),
         (b"CPU", b"\r\nmini-os: unknown command: CPU\r\n" + PROMPT),
         (b"unknown", b"\r\nmini-os: unknown command: unknown\r\n" + PROMPT),
         (b"", b"\r\n" + PROMPT),
@@ -570,10 +570,18 @@ def fault_report_matcher(kind, symbols):
             if not condition:
                 raise ValueError(f"Incorrect exception report: {detail}")
         require(len(lines) == 36, "length")
-        reason = "brk" if kind == "brk" else "unknown"
+        memory_fault = kind in ("unmapped","readonly")
+        reason = "data-abort" if memory_fault else "brk" if kind == "brk" else "unknown"
         require(lines[0] == f"mini-os: exception vector=current-spx-sync reason={reason}".encode(), "vector or reason")
-        esr = 0xf2000123 if kind == "brk" else 0x02000000
-        require(lines[1] == f"esr=0x{esr:016x} ec=0x{esr >> 26:02x} il=1 iss=0x{esr & 0x1ffffff:07x}".encode(), "syndrome")
+        if memory_fault:
+            dfsc = 6 if kind=="unmapped" else 15
+            esr = 0x96000000 | dfsc | (64 if kind=="readonly" else 0)
+            description = "translation" if kind=="unmapped" else "permission"
+            expected = f"esr=0x{esr:016x} ec=0x25 il=1 iss=0x{esr & 0x1ffffff:07x} abort={description} dfsc=0x{dfsc:02x} write={int(kind=='readonly')} far-valid=1"
+        else:
+            esr = 0xf2000123 if kind == "brk" else 0x02000000
+            expected = f"esr=0x{esr:016x} ec=0x{esr >> 26:02x} il=1 iss=0x{esr & 0x1ffffff:07x}"
+        require(lines[1] == expected.encode(), "syndrome")
         state = re.fullmatch(rb"elr=0x([0-9a-f]{16}) spsr=0x([0-9a-f]{16})", lines[2])
         require(state is not None, "state formatting")
         elr, spsr = (int(value, 16) for value in state.groups())
@@ -583,8 +591,11 @@ def fault_report_matcher(kind, symbols):
         require(stack is not None, "SP or raw FAR formatting")
         sp = int(stack[1], 16)
         require(symbols["__stack_bottom"] + 304 <= sp <= symbols["__stack_top"] and sp % 16 == 0, "stack address")
+        target = 0x1000 if kind=="unmapped" else symbols.get("mini_os_readonly_probe",0)
+        if memory_fault: require(int(stack[2],16)==target, "fault address")
         for index in range(31):
-            require(lines[index + 4] == f"x{index:02d}=0x{0x100 + index:016x}".encode(), f"saved x{index}")
+            value = target if memory_fault and index==16 else 0x100+index
+            require(lines[index + 4] == f"x{index:02d}=0x{value:016x}".encode(), f"saved x{index}")
         require(lines[-1] == b"mini-os: halted", "halt marker")
         return end + len(marker)
     return match
@@ -597,7 +608,7 @@ def fault_exchanges(kind, symbols):
     yield "fatal exception", b"\n", fault_report_matcher(kind, symbols)
 
 
-def fault_test(command, timeout=10, symbols=None):
+def fault_test(command, timeout=10, symbols=None, kinds=("brk","undef")):
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("Serial deadline must be positive")
     deadline = time.monotonic() + timeout
@@ -606,7 +617,7 @@ def fault_test(command, timeout=10, symbols=None):
     output, diagnostics = bytearray(), bytearray()
     last_pid = 0
     for model in ("cortex-a53", "cortex-a57"):
-        for kind in ("brk", "undef"):
+        for kind in kinds:
             name = f"{model}, fault {kind}"
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -621,6 +632,40 @@ def fault_test(command, timeout=10, symbols=None):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
+def mmu_exchanges(memory=128):
+    yield next(uart_exchanges(memory))
+    def report(data):
+        if PROMPT not in data: return None
+        lines = data.split(b"\r\n")
+        if len(lines)!=4 or lines[0]!=b"" or lines[-1]!=PROMPT: raise ValueError("Incorrect MMU report framing")
+        match = re.fullmatch(rb"mmu: SCTLR_EL1=0x([0-9a-f]{16}) TCR_EL1=0x([0-9a-f]{16}) TTBR0_EL1=0x([0-9a-f]{16}) MAIR_EL1=0x([0-9a-f]{16}) tables=([0-9]+)",lines[1])
+        if match is None: raise ValueError("Incorrect MMU register formatting")
+        sctlr,tcr,root,mair = (int(value,16) for value in match.groups()[:4]); tables=int(match[5])
+        expected_tcr=(2<<32)|(2<<30)|(1<<23)|(25<<16)|(3<<12)|25
+        if not (sctlr&0x1005==1 and tcr==expected_tcr and mair==0x44 and 0x40200000<=root<0x40000000+memory*1024*1024 and root%4096==0 and tables>=3): raise ValueError("Incorrect MMU execution state")
+        probes = re.fullmatch(rb"mmu: text=0x0000000040200000 text-write=denied rodata-write=denied dtb-write=denied stack=0x([0-9a-f]{16}) guard=unmapped null=unmapped uart=0x0000000009000000",lines[2])
+        if probes is None or not (0x40200000<=int(probes[1],16)<root and int(probes[1],16)%4096==0): raise ValueError("Incorrect MMU identity translations or permissions")
+        return len(data)
+    yield from command_exchange("MMU translation",b"mmu",report)
+    yield from command_exchange("MMU SGI",b"irq test",b"\r\nirq: test OK\r\n"+PROMPT)
+    yield from command_exchange("MMU allocation",b"mem test",b"\r\nmem: test OK\r\n"+PROMPT)
+    yield from command_exchange("MMU usage",b"mmu x",b"\r\nusage: mmu\r\n"+PROMPT)
+    # Reuse the recurring-timer exchange without repeating readiness.
+    exchanges=timer_exchanges(memory);next(exchanges)
+    yield from exchanges
+
+
+def mmu_test(command,timeout=10,symbols=None):
+    deadline=time.monotonic()+timeout
+    scenarios=tuple((model,count,memory) for model,count,_ in CPU_SCENARIOS for memory in (128,256))
+    normal=scenario_test(command,timeout,scenarios,mmu_exchanges)
+    if not normal.success: return normal
+    remaining=deadline-time.monotonic()
+    if remaining<=0: return BootResult(False,"Timed out before MMU faults",normal.stdout,normal.stderr,normal.pid)
+    faults=fault_test(command,remaining,symbols,("unmapped","readonly"))
+    return BootResult(faults.success,faults.reason,normal.stdout+faults.stdout,normal.stderr+faults.stderr,faults.pid)
+
+
 def qemu_command(image, executable):
     if not image.is_file():
         raise RuntimeError(f"Missing kernel image: {image}; run kernel-build first.")
@@ -632,7 +677,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -646,7 +691,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
