@@ -26,9 +26,9 @@ verification and relevant host tests; a successful build alone is insufficient.
 
 Work through these milestones in order. The first kernel boot is verified locally
 in debug and release builds. PL011 receive, the editable monitor, UART/RAM/CPU
-device-tree discovery, CPU inspection, and fatal exception diagnostics, GICv3 IRQ delivery, and recurring timer ticks are verified
+device-tree discovery, CPU inspection, and fatal exception diagnostics, GICv3 IRQ delivery, recurring timer ticks, and physical page allocation are verified
 natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
-**Next milestone: physical page allocation and reserved memory.**
+**Next milestone: protected identity mappings and MMU activation.**
 
 - [x] **Boot + linker script**
   - [x] Separate host and freestanding AArch64 CMake builds and presets.
@@ -81,9 +81,11 @@ natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
   - [x] Rearm absolute deadlines, count missed periods, and expose coherent statistics.
   - [x] Verify recurring timer progress during console input and SGI tests on A53/A57.
   - [x] Pass native, ARM64 Docker, and emulated AMD64 checks: 81 host tests/configuration and 15 CTests/kernel preset.
-- [ ] **Physical page allocator**
-  - [ ] Track usable RAM and reserve kernel and platform memory regions.
-  - [ ] Test allocation, release, exhaustion, and reserved-region boundaries.
+- [x] **Physical page allocator**
+  - [x] Track complete RAM pages and reserve DT/platform, kernel, stack and bitmap memory.
+  - [x] Test placement, allocation, release, exhaustion, reuse, malformed reservations and overflow.
+  - [x] Verify writable pages and restored accounting with 128/256 MiB RAM.
+  - [x] Pass native, ARM64 Docker, and emulated AMD64 checks: 93 host tests/configuration and 17 CTests/kernel preset.
 - [ ] **MMU**
   - [ ] Implement AArch64 page tables and memory-management interfaces.
   - [ ] Verify address translation and controlled page faults under QEMU.

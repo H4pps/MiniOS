@@ -166,13 +166,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, physical-page allocation, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, and timer tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, and memory tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -226,6 +226,7 @@ lowercase and case-sensitive:
 | `help` | List commands, including deliberate fault triggers |
 | `cpu` | Report DT CPU inventory and the boot CPU's current identity and state |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
+| `mem [test]` | Report page accounting or verify eight writable pages and restored accounting |
 | `timer` | Report physical timer frequency, interval, counter, ticks, and missed periods |
 | `irq [test]` | Inspect GIC/IRQ counters or test a self-interrupt and context restoration |
 | `fault brk` | Trigger a breakpoint, report CPU context, and halt |
@@ -423,6 +424,35 @@ one/four CPUs and A57 with one CPU, along with SGI delivery and prompt recovery.
 Timing checks require progress rather than exact emulated wall-clock timing.
 Host tests cover discovery, rounding, delayed delivery, wraparound and saturation;
 separate fake processes cover bad reports, stalled counters, diagnostics and cleanup.
+
+## Physical pages and reservations
+
+`mem` reports complete 4 KiB RAM pages, reserved/allocated/free counts, and the
+physical bitmap address. `mem test` allocates eight distinct pages, verifies
+writable contents, releases them, and checks that accounting returns to its
+original values. Invalid arguments produce `usage: mem [test]`.
+
+The allocator uses caller-provided reserved and allocated bitmaps and returns
+the lowest available page. It never implicitly zeroes allocated pages. Releases
+reject unaligned, out-of-range, reserved and already-free pages. Allocation is
+confined to foreground execution; interrupt handlers do not allocate.
+
+Reservations include FDT reservation-table entries, enabled static
+`/reserved-memory` regions, the entire 2 MiB DTB window, complete kernel image
+and stack, and the bitmap metadata itself. Partial RAM boundary pages are
+excluded; any page intersecting a reservation stays reserved. Metadata is placed
+in a free aligned interval before writing its bitmaps. Up to 32 coalesced external
+ranges are supported. Overlapping ranges merge conservatively, retaining `no-map`
+on the union; reusable regions remain reserved. Dynamic reservations, translated
+or nested reserved-memory buses, arithmetic overflow, and external reservations
+conflicting with boot memory fail startup. The supported static layout follows
+the [reserved-memory binding](https://raw.githubusercontent.com/devicetree-org/dt-schema/main/dtschema/schemas/reserved-memory/reserved-memory.yaml).
+
+`kernel.memory` repeatedly checks allocation, release, writable pages and restored
+accounting with 128/256 MiB RAM. Host sanitizer tests cover metadata placement,
+partial pages, exhaustion, reuse, invalid releases, reservation capacity,
+malformed DT properties and overflow. Fake processes verify incorrect accounting,
+incomplete reports, stderr draining, deadlines and cleanup.
 
 ## Fatal exceptions
 
