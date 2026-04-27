@@ -328,7 +328,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n"
+HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test]   inspect or test physical pages\r\n"
 
 
 def cpu_report_matcher(model, count):
@@ -527,6 +527,32 @@ def timer_test(command, timeout=10):
     return scenario_test(command, timeout, CPU_SCENARIOS, timer_exchanges)
 
 
+def memory_exchanges(memory=128):
+    yield next(uart_exchanges(memory))
+    baseline = []
+    def report(data):
+        if PROMPT not in data: return None
+        match = re.fullmatch(rb"\r\nmem: base=0x([0-9a-f]{16}) size=0x([0-9a-f]{16}) pages=([0-9]+) reserved=([0-9]+) allocated=([0-9]+) free=([0-9]+) metadata=0x([0-9a-f]{16})\r\nmini-os> ", data)
+        if match is None: raise ValueError("Incorrect memory report formatting")
+        base, size, pages, reserved, allocated, free, metadata = (int(value, 16 if i in (0,1,6) else 10) for i, value in enumerate(match.groups()))
+        if not (base == 0x40000000 and size == memory*1024*1024 and pages == size//4096 and reserved >= 512 and pages == reserved+allocated+free and free >= 8 and base+0x200000 <= metadata < base+size and metadata%4096 == 0):
+            raise ValueError("Incorrect memory accounting or metadata placement")
+        values = (base,size,pages,reserved,allocated,free,metadata)
+        if baseline and values != baseline[0]: raise ValueError("Memory test changed accounting")
+        baseline[:] = [values]
+        return len(data)
+    yield from command_exchange("memory baseline", b"mem", report)
+    for _ in range(3):
+        yield from command_exchange("memory allocation", b"mem test  ", b"\r\nmem: test OK\r\n" + PROMPT)
+        yield from command_exchange("memory restored", b"mem", report)
+        yield from command_exchange("memory console", b"echo allocated", b"\r\necho: allocated\r\n" + PROMPT)
+    yield from command_exchange("memory usage", b"mem test extra", b"\r\nusage: mem [test]\r\n" + PROMPT)
+
+
+def memory_test(command, timeout=10):
+    return scenario_test(command, timeout, (("cortex-a53",1,128),("cortex-a53",1,256)), memory_exchanges)
+
+
 def fault_report_matcher(kind, symbols):
     """Match a terminal report, checking captured context against the ELF and sentinels."""
     def match(data):
@@ -606,7 +632,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -620,7 +646,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:

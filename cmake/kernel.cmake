@@ -14,6 +14,7 @@ add_executable(mini_os_kernel
   src/arch/aarch64/cpu.cpp
   src/arch/aarch64/timer.cpp
   src/platform/qemu_virt/timer.cpp
+  src/platform/qemu_virt/memory.cpp
   src/arch/aarch64/irq.cpp
   src/arch/aarch64/irq_probe.S
   src/platform/qemu_virt/interrupts.cpp
@@ -59,11 +60,14 @@ if(BUILD_TESTING)
   add_test(NAME kernel.timer
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
       timer-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
-  set_tests_properties(kernel.boot kernel.uart kernel.fdt kernel.monitor kernel.exception kernel.irq kernel.timer PROPERTIES TIMEOUT 20)
+  add_test(NAME kernel.memory
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
+      memory-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
+  set_tests_properties(kernel.boot kernel.uart kernel.fdt kernel.monitor kernel.exception kernel.irq kernel.timer kernel.memory PROPERTIES TIMEOUT 20)
   add_test(NAME kernel.elf
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/verify_elf.py"
       "$<TARGET_FILE:mini_os_kernel>")
-  foreach(protocol IN ITEMS boot uart fdt monitor fault irq timer)
+  foreach(protocol IN ITEMS boot uart fdt monitor fault irq timer memory)
     add_test(NAME tools.${protocol}_runner
       COMMAND "${Python3_EXECUTABLE}" -m unittest discover
         -s "${PROJECT_SOURCE_DIR}/tests/python" -p "test_${protocol}_runner.py")

@@ -15,13 +15,13 @@ Kernel presets: kernel-debug (default for kernel-*), kernel-release
   run           Build and run the host demo
   kernel-build  Configure and build the freestanding ELF
   kernel-run    Build and launch QEMU (Ctrl-C to stop)
-  kernel-test   Build and run boot, UART, DTB, monitor, exception, IRQ, timer, ELF, and runner tests through CTest
+  kernel-test   Build and run boot, UART, DTB, monitor, exception, IRQ, timer, memory, ELF, and runner tests through CTest
   kernel-lint   Build and analyze kernel C/C++ translation units
   format        Format project C/C++ sources and headers
   format-check  Check formatting without changing files
   lint          Build and analyze host translation units
   check-host    Formatting, host analysis, debug/release and sanitizer tests
-  check         All host checks, kernel analysis, debug/release boot, UART, DTB, monitor, exception, IRQ, and timer tests
+  check         All host checks, kernel analysis, debug/release boot, UART, DTB, monitor, exception, IRQ, timer, and memory tests
   clean         Remove only the selected preset's build directory
 HELP
 }
