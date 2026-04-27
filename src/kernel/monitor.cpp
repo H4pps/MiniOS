@@ -32,6 +32,8 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::help;
     } else if (command.name.equals("cpu")) {
         command.kind = CommandKind::cpu;
+    } else if (command.name.equals("mmu")) {
+        command.kind = CommandKind::mmu;
     } else if (command.name.equals("timer")) {
         command.kind = CommandKind::timer;
     } else if (command.name.equals("echo")) {
@@ -51,14 +53,16 @@ Command parse_command(TextSpan line) {
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
             --argument.size;
         }
-        command.kind = argument.equals("brk")     ? CommandKind::fault_brk
-                       : argument.equals("undef") ? CommandKind::fault_undef
-                                                  : CommandKind::usage;
+        command.kind = argument.equals("brk")        ? CommandKind::fault_brk
+                       : argument.equals("undef")    ? CommandKind::fault_undef
+                       : argument.equals("unmapped") ? CommandKind::fault_unmapped
+                       : argument.equals("readonly") ? CommandKind::fault_readonly
+                                                     : CommandKind::usage;
     } else {
         command.kind = CommandKind::unknown;
     }
     if ((command.kind == CommandKind::help || command.kind == CommandKind::cpu ||
-         command.kind == CommandKind::timer) &&
+         command.kind == CommandKind::timer || command.kind == CommandKind::mmu) &&
         command.arguments.size != 0) {
         command.kind = CommandKind::usage;
     }
@@ -67,6 +71,9 @@ Command parse_command(TextSpan line) {
 void render_text_command(TextWriter &writer, const Command &command) {
     switch (command.kind) {
     case CommandKind::empty:
+    case CommandKind::mmu:
+    case CommandKind::fault_unmapped:
+    case CommandKind::fault_readonly:
     case CommandKind::mem:
     case CommandKind::mem_test:
     case CommandKind::timer:
@@ -79,9 +86,10 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::help:
         writer.write("commands:\n  help         show commands\n  cpu          show CPU inventory "
                      "and boot registers\n  echo [text]  echo text\n"
-                     "  fault brk|undef  trigger a fatal exception\n  irq [test]   inspect or test "
+                     "  fault brk|undef|unmapped|readonly  trigger a fatal exception\n  irq [test] "
+                     "  inspect or test "
                      "interrupts\n  timer        inspect timer counters\n  mem [test]   inspect or "
-                     "test physical pages\n");
+                     "test physical pages\n  mmu          inspect mappings and protection\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");
@@ -100,7 +108,7 @@ void render_text_command(TextWriter &writer, const Command &command) {
             writer.write(" [test]");
         }
         if (command.name.equals("fault")) {
-            writer.write(" brk|undef");
+            writer.write(" brk|undef|unmapped|readonly");
         }
         writer.put('\n');
         return;

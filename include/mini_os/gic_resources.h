@@ -9,6 +9,7 @@ struct GicResources {
     uint32_t phandle;
 };
 // nullptr on success; returned diagnostics are static strings.
+const GicResources &gic_resources();
 const char *discover_gic(const fdt::View &view, GicResources &resources);
 } // namespace platform
 #endif

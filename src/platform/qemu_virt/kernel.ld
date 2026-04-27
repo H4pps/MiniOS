@@ -13,6 +13,7 @@ PHDRS {
 __dtb_start = 0x40000000;
 __dtb_end = ORIGIN(RAM);
 __image_start = ORIGIN(RAM);
+__text_start = __image_start;
 
 SECTIONS {
     .text : {
@@ -20,16 +21,18 @@ SECTIONS {
         *(.text .text.*)
     } > RAM :text
     .vectors : ALIGN(2048) { KEEP(*(.vectors)) } > RAM :text
-    .rodata : ALIGN(4096) { *(.rodata .rodata.*) } > RAM :rodata
+    __text_end = ALIGN(.,4096);
+    .rodata : ALIGN(4096) { __rodata_start = .; *(.rodata .rodata.*) . = ALIGN(4096); __rodata_end = .; } > RAM :rodata
     .data : ALIGN(4096) { *(.data .data.*) } > RAM :data
     .bss (NOLOAD) : ALIGN(8) {
         __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
-        . = ALIGN(8);
+        . = ALIGN(4096);
         __bss_end = .;
     } > RAM :data
-    .stack (NOLOAD) : ALIGN(16) {
+    .guard (NOLOAD) : ALIGN(4096) { __stack_guard = .; . += 4096; __stack_guard_end = .; } > RAM :data
+    .stack (NOLOAD) : ALIGN(4096) {
         __stack_bottom = .;
         . += 64K;
         __stack_top = .;
@@ -49,3 +52,7 @@ ASSERT(__image_end <= ORIGIN(RAM) + LENGTH(RAM), "Kernel exceeds QEMU RAM")
 
 ASSERT((ADDR(.vectors) & 2047) == 0, "Exception vectors must be 2 KiB aligned")
 ASSERT(SIZEOF(.vectors) == 2048, "Expected sixteen 128-byte vectors")
+
+ASSERT((__stack_bottom & 4095) == 0 && (__stack_top & 4095) == 0, "Stack pages must be aligned")
+ASSERT(__stack_guard_end == __stack_bottom && __stack_guard_end - __stack_guard == 4096, "Expected one stack guard page")
+ASSERT((__text_end & 4095) == 0 && (__rodata_end & 4095) == 0, "Permission boundaries must be page aligned")

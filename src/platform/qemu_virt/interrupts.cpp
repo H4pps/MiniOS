@@ -11,13 +11,15 @@ extern volatile uint64_t mini_os_irq_probe_values[34];
 namespace {
 constinit kernel::IrqTable handlers;
 drivers::gicv3::State controller;
+platform::GicResources saved_gic;
 volatile uint64_t delivered = 0, self_sgi = 0;
 void received_sgi(void *) { self_sgi = self_sgi + 1; }
 } // namespace
 namespace platform {
+const GicResources &gic_resources() { return saved_gic; }
 const char *initialize_interrupts() {
     fdt::View view;
-    GicResources resources;
+    auto &resources = saved_gic;
     if (fdt::View::open(platform_resources().dtb, view) != fdt::Error::none) {
         return "gic invalid tree";
     }
