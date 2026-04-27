@@ -1,8 +1,8 @@
 # mini-os
 
 A freestanding C17 / C++20 kernel for **AArch64 / ARMv8-A on QEMU `virt`**.
-It boots at EL1, discovers the PL011 UART, RAM, and CPU inventory from QEMU's device tree,
-checks its startup state, and enters an editable serial monitor:
+It boots at EL1, discovers UART, RAM, CPUs, GICv3 and timer resources from QEMU's device tree,
+enables protected identity mappings and timer interrupts, and enters an editable serial monitor:
 
 ```text
 mini-os: dtb OK uart=0x0000000009000000 clock=24000000 ram=0x0000000040000000 size=0x0000000008000000
@@ -166,13 +166,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, physical-page allocation, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, physical-page allocation, MMU protection, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, and memory tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, and MMU tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -226,11 +226,14 @@ lowercase and case-sensitive:
 | `help` | List commands, including deliberate fault triggers |
 | `cpu` | Report DT CPU inventory and the boot CPU's current identity and state |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
+| `mmu` | Inspect translation registers, identity mappings, and permission probes |
 | `mem [test]` | Report page accounting or verify eight writable pages and restored accounting |
 | `timer` | Report physical timer frequency, interval, counter, ticks, and missed periods |
 | `irq [test]` | Inspect GIC/IRQ counters or test a self-interrupt and context restoration |
 | `fault brk` | Trigger a breakpoint, report CPU context, and halt |
 | `fault undef` | Execute an undefined instruction, report CPU context, and halt |
+| `fault unmapped` | Read an unassigned address, report a translation fault, and halt |
+| `fault readonly` | Write a read-only probe, report a permission fault, and halt |
 
 Leading spaces and spaces separating a command from its arguments are ignored.
 `help` and `cpu` accept trailing spaces but reject arguments with `usage: help`
@@ -256,14 +259,15 @@ and omit `-T`; automated checks use `-T` and open their own emulator input pipe.
 
 The kernel uses Clang targeting `aarch64-none-elf` and LLD with CMake's Generic
 system. Compiler probes produce static libraries. Kernel code is freestanding,
-uses general registers only and strict alignment (`-mstrict-align`) while the
-MMU is off, and has no C++ exceptions, RTTI, stack protector,
+uses general registers only and strict alignment (`-mstrict-align`) with protected
+identity mappings, and has no C++ exceptions, RTTI, stack protector,
 hosted C++ headers, standard-library linkage, or dynamic initialization.
 GoogleTest, vcpkg, macOS SDK configuration, and sanitizers stay in host builds.
 
 The QEMU platform linker script loads the ELF at `0x40200000`, reserving the
 first 2 MiB of 128 MiB RAM for QEMU's device tree. Text, read-only data, data,
-and aligned BSS have separate sections; the stack reserves another 64 KiB.
+and page-aligned BSS have separate sections; the stack reserves another 64 KiB
+with an unmapped 4 KiB guard page below it.
 Linker assertions reject runtime constructors/destructors, TLS, and RAM overflow.
 Architecture startup masks interrupts, selects the stack, clears BSS, and calls
 `kernel_entry`. After initializing the bootstrap UART and checking EL1, the entry
@@ -283,7 +287,7 @@ for FIFO availability, per-byte error flags, and error clearing. These assumptio
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
 CPU hierarchy discovery, secondary CPU startup, synchronous exception recovery,
 interrupt-driven UART reception,
-MMU setup, EL2/EL3 transitions,
+EL2/EL3 transitions,
 and scheduling remain later milestones.
 
 Interactive execution and tests share this fixed emulator configuration:
@@ -454,11 +458,39 @@ partial pages, exhaustion, reuse, invalid releases, reservation capacity,
 malformed DT properties and overflow. Fake processes verify incorrect accounting,
 incomplete reports, stderr draining, deadlines and cleanup.
 
+## Protected identity mappings
+
+The kernel enables EL1 translation before boot confirmation. Virtual addresses
+remain equal to physical addresses. Tables use allocator-owned, explicitly
+zeroed pages, 4 KiB leaves, a 39-bit TTBR0 address space, disabled TTBR1 walks,
+and a 40-bit physical-address configuration. Hardware capabilities, extents,
+permission boundaries and reserved regions are checked before activation.
+The design follows the [Arm memory-management guide](https://documentation-service.arm.com/static/670e4dc89fbc7343d3e4cee1).
+
+Text and vectors are read-only and executable. Read-only data and the DTB window
+are read-only and non-executable. Writable RAM, data, BSS, bitmap metadata, tables
+and stack are non-executable. All mappings deny EL0 access. RAM uses Normal
+non-cacheable attributes; UART and GIC use Device-nGnRnE. Null and unassigned
+addresses, no-map reservations and the stack guard stay unmapped. CPU caches
+remain disabled. Tables are immutable after activation; dynamic mappings and
+heap allocation remain future work.
+
+`mmu` reports SCTLR/TCR/TTBR0/MAIR, owned table count, and architectural read/write
+translation probes. Text, rodata and DTB writes must be denied; stack and UART
+addresses must translate identically; null and guard probes must fault.
+`kernel.mmu` checks these permissions alongside timer, SGI, console and allocator
+operation at 128/256 MiB on A53/A57. Separate controlled faults verify exact
+ELR/FAR, translation versus write-permission syndromes and captured registers.
+Host tests cover descriptor bits, overlaps, address boundaries, exhaustion,
+cleanup, unsupported hardware, reserved exclusions and sealed mappings. Fake
+normal/fault runner modules have separate twenty-second CTest budgets.
+
 ## Fatal exceptions
 
-Use `fault brk` or `fault undef` to exercise exception diagnostics. Trailing
+Use `fault brk`, `fault undef`, `fault unmapped` or `fault readonly` to exercise
+exception diagnostics. Trailing
 spaces are accepted; missing, unknown, or extra arguments print
-`usage: fault brk|undef` and return to the prompt. Accepted fault commands halt
+`usage: fault brk|undef|unmapped|readonly` and return to the prompt. Accepted fault commands halt
 the kernel; press **Ctrl-C** to stop QEMU and start another run to continue.
 
 A breakpoint report begins with:
@@ -472,7 +504,10 @@ The remaining lines show ELR_EL1, SPSR_EL1, the original stack pointer, raw
 FAR_EL1, and x00–x30, ending with `mini-os: halted`. Addresses and registers
 use sixteen lowercase hexadecimal digits; EC uses two and ISS seven. Undefined
 instructions report `reason=unknown` (the architectural unknown-reason class).
-FAR is raw because it need not identify an address for these exceptions. IRQ,
+Data aborts additionally decode the fault-status code, translation/permission
+class, write indicator and FAR-valid flag. The controlled unmapped read targets
+`0x1000`; the read-only write targets an exported probe in rodata. FAR remains
+labeled raw: breakpoint/undefined exceptions need not supply a fault address. IRQ,
 FIQ, and SError reports identify the vector but do not interpret ESR as a
 synchronous syndrome.
 
@@ -484,7 +519,8 @@ Deliberate triggers seed x0–x30 with distinct values so QEMU checks the actual
 capture, rather than merely recognizing a message. A nested exception during
 reporting halts without attempting another report.
 
-Diagnostics require an intact stack and working polling UART, and become
+The stack guard restricts access; it does not provide an emergency stack or
+guarantee a report after stack corruption. Diagnostics require an intact stack and working polling UART, and become
 available after bootstrap UART initialization and the EL1 check. There is no
 emergency stack, exception recovery/return, stack-corruption guarantee, lower-EL
 execution, or recovery from fatal exceptions. Current-EL/SP_EL1 IRQs return through `ERET`;
@@ -501,10 +537,16 @@ other exception paths halt. D/A/F remain masked, while foreground IRQs are enabl
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests in both kernel presets.
+  tests, including IRQ, timer, allocator and MMU coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
 Add hardware-independent C/C++ logic to `mini_os_core` and host GoogleTest files
 to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
+
+The four interrupt/timekeeping/allocation/protection operations were verified
+sequentially. The current full check passes 101 host tests per configuration and
+20 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+Docker. Each environment includes formatting, static analysis, host sanitizers,
+ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.

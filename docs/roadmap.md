@@ -24,11 +24,15 @@ verification and relevant host tests; a successful build alone is insufficient.
 
 ## Kernel milestones
 
-Work through these milestones in order. The first kernel boot is verified locally
-in debug and release builds. PL011 receive, the editable monitor, UART/RAM/CPU
-device-tree discovery, CPU inspection, and fatal exception diagnostics, GICv3 IRQ delivery, recurring timer ticks, and physical page allocation are verified
-natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
-**Next milestone: protected identity mappings and MMU activation.**
+Boot, the editable serial monitor, device-tree discovery, CPU inspection,
+fatal diagnostics, GICv3 IRQ delivery, recurring timer ticks, physical page
+allocation, and protected identity mappings are verified natively and in
+ARM64/AMD64 containers. AMD64 uses local emulation. Each of the four foundation
+operations passed its complete checks before the next began.
+
+The current baseline passes **101 host tests per configuration** (debug,
+release, sanitizers) and **20 CTests per kernel preset** (debug/release) in all
+three environments. Remote CI verification remains pending.
 
 - [x] **Boot + linker script**
   - [x] Separate host and freestanding AArch64 CMake builds and presets.
@@ -86,9 +90,16 @@ natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
   - [x] Test placement, allocation, release, exhaustion, reuse, malformed reservations and overflow.
   - [x] Verify writable pages and restored accounting with 128/256 MiB RAM.
   - [x] Pass native, ARM64 Docker, and emulated AMD64 checks: 93 host tests/configuration and 17 CTests/kernel preset.
-- [ ] **MMU**
-  - [ ] Implement AArch64 page tables and memory-management interfaces.
-  - [ ] Verify address translation and controlled page faults under QEMU.
+- [x] **MMU: protected identity mappings**
+  - [x] Build allocator-owned, explicitly zeroed 4 KiB tables with EL1-only permissions.
+  - [x] Validate 39-bit TTBR0 / 40-bit PA configuration and disable TTBR1 walks.
+  - [x] Protect text/vectors, rodata/DTB, writable RAM, metadata, tables and stack; keep caches off.
+  - [x] Preserve no-map exclusions, reject Device/RAM aliasing, and leave null/stack guard unmapped.
+  - [x] Verify translation probes, timer/SGI/allocator operation and controlled data aborts at 128/256 MiB on A53/A57.
+  - [x] Pass native, ARM64 Docker, and emulated AMD64 checks: 101 host tests/configuration and 20 CTests/kernel preset.
+- [ ] **Further memory and UART work**
+  - [ ] Add heap allocation and reclaim reusable reservations.
+  - [ ] Add interrupt-driven UART reception.
 - [ ] **Further CPU discovery and startup**
   - [ ] Discover socket/cluster/core/thread hierarchy from `cpu-map`.
   - [ ] Implement secondary CPU startup and track actual online state.
@@ -111,5 +122,5 @@ natively and in ARM64/AMD64 containers (AMD64 uses local emulation).
   - [ ] Verify reports against controlled workloads under QEMU.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception tests, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU tests, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.
