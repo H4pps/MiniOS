@@ -1,6 +1,7 @@
 #include "mini_os/console.h"
 
 #include "mini_os/exception.h"
+#include "mini_os/heap.h"
 #include "mini_os/interrupt.h"
 #include "mini_os/line_editor.h"
 #include "mini_os/memory.h"
@@ -46,6 +47,15 @@ namespace kernel {
                     render_cpu(writer, platform::cpu_inventory(), arch::read_cpu_snapshot());
                 } else if (command.kind == CommandKind::mmu) {
                     platform::render_mmu(writer);
+                } else if (command.kind == CommandKind::heap) {
+                    render_heap(writer, platform::heap_stats());
+                } else if (command.kind == CommandKind::heap_test) {
+                    writer.write(platform::heap_self_test() ? "heap: test OK\n"
+                                                            : "heap: test FAIL\n");
+                } else if (command.kind == CommandKind::mem_reclaim) {
+                    writer.write("mem: reclaimed pages=");
+                    writer.decimal(platform::reclaim_reusable_memory());
+                    writer.put('\n');
                 } else if (command.kind == CommandKind::mem) {
                     render_memory(writer, platform::memory_stats());
                 } else if (command.kind == CommandKind::mem_test) {

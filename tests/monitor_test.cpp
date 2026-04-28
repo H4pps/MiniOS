@@ -30,13 +30,13 @@ TEST(Monitor, ParserBorrowsArgumentsAndHonorsSpacing) {
     EXPECT_EQ(parse(" cpu  ").kind, kernel::CommandKind::cpu);
 }
 TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
-    EXPECT_EQ(response("help  "),
-              "commands:\n  help         show commands\n  cpu          show "
-              "CPU inventory and boot registers\n  echo [text]  echo text\n"
-              "  fault brk|undef|unmapped|readonly  trigger a fatal exception\n  irq [test]   "
-              "inspect or test interrupts\n  timer        inspect timer "
-              "counters\n  mem [test]   inspect or test physical pages\n  mmu          inspect "
-              "mappings and protection\n");
+    EXPECT_EQ(
+        response("help  "),
+        "commands:\n  help         show commands\n  cpu          show CPU inventory and boot "
+        "registers\n  echo [text]  echo text\n  fault brk|undef|unmapped|readonly  trigger a fatal "
+        "exception\n  irq [test]   inspect or test interrupts\n  timer        inspect timer "
+        "counters\n  mem [test|reclaim]  inspect, test or reclaim physical pages\n  mmu          "
+        "inspect mappings and protection\n  heap [test]  inspect or test heap allocation\n");
     EXPECT_EQ(response("help x"), "usage: help\n");
     EXPECT_EQ(response("cpu x"), "usage: cpu\n");
     EXPECT_EQ(response("CPU x"), "mini-os: unknown command: CPU\n");

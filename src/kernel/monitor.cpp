@@ -38,16 +38,21 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::timer;
     } else if (command.name.equals("echo")) {
         command.kind = CommandKind::echo;
-    } else if ((command.name.equals("irq") || command.name.equals("mem"))) {
+    } else if ((command.name.equals("irq") || command.name.equals("mem") ||
+                command.name.equals("heap"))) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
             --argument.size;
         }
-        command.kind =
-            argument.size == 0 ? (command.name.equals("mem") ? CommandKind::mem : CommandKind::irq)
-            : argument.equals("test")
-                ? (command.name.equals("mem") ? CommandKind::mem_test : CommandKind::irq_test)
-                : CommandKind::usage;
+        const bool heap = command.name.equals("heap"), memory = command.name.equals("mem");
+        command.kind = argument.size == 0                     ? (heap     ? CommandKind::heap
+                                                                 : memory ? CommandKind::mem
+                                                                          : CommandKind::irq)
+                       : argument.equals("test")              ? (heap     ? CommandKind::heap_test
+                                                                 : memory ? CommandKind::mem_test
+                                                                          : CommandKind::irq_test)
+                       : memory && argument.equals("reclaim") ? CommandKind::mem_reclaim
+                                                              : CommandKind::usage;
     } else if (command.name.equals("fault")) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
@@ -74,6 +79,9 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::mmu:
     case CommandKind::fault_unmapped:
     case CommandKind::fault_readonly:
+    case CommandKind::heap:
+    case CommandKind::heap_test:
+    case CommandKind::mem_reclaim:
     case CommandKind::mem:
     case CommandKind::mem_test:
     case CommandKind::timer:
@@ -84,12 +92,13 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::fault_undef:
         return;
     case CommandKind::help:
-        writer.write("commands:\n  help         show commands\n  cpu          show CPU inventory "
-                     "and boot registers\n  echo [text]  echo text\n"
-                     "  fault brk|undef|unmapped|readonly  trigger a fatal exception\n  irq [test] "
-                     "  inspect or test "
-                     "interrupts\n  timer        inspect timer counters\n  mem [test]   inspect or "
-                     "test physical pages\n  mmu          inspect mappings and protection\n");
+        writer.write(
+            "commands:\n  help         show commands\n  cpu          show CPU inventory and boot "
+            "registers\n  echo [text]  echo text\n  fault brk|undef|unmapped|readonly  trigger a "
+            "fatal exception\n  irq [test]   inspect or test interrupts\n  timer        inspect "
+            "timer counters\n  mem [test|reclaim]  inspect, test or reclaim physical pages\n  mmu  "
+            "        inspect mappings and protection\n  heap [test]  inspect or test heap "
+            "allocation\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");
@@ -104,8 +113,9 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::usage:
         writer.write("usage: ");
         writer.write(command.name);
-        if ((command.name.equals("irq") || command.name.equals("mem"))) {
-            writer.write(" [test]");
+        if ((command.name.equals("irq") || command.name.equals("mem") ||
+             command.name.equals("heap"))) {
+            writer.write(command.name.equals("mem") ? " [test|reclaim]" : " [test]");
         }
         if (command.name.equals("fault")) {
             writer.write(" brk|undef|unmapped|readonly");

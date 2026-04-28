@@ -2,6 +2,7 @@
 #include "mini_os/arch.h"
 #include "mini_os/console.h"
 #include "mini_os/exception.h"
+#include "mini_os/heap.h"
 #include "mini_os/interrupt.h"
 #include "mini_os/memory.h"
 #include "mini_os/mmu.h"
@@ -56,6 +57,9 @@ extern "C" [[noreturn]] void kernel_entry() {
         fail(reason);
     }
     if (const auto *reason = platform::initialize_mmu()) {
+        fail(reason);
+    }
+    if (const auto *reason = platform::initialize_heap()) {
         fail(reason);
     }
     arch::enable_irq();
