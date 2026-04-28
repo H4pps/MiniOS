@@ -143,6 +143,7 @@ TEST_F(ReservedDiscovery, StaticNoMapReusableAndDisabledRegions) {
     region().properties[1] = {"reusable", {}};
     ASSERT_EQ(discover(), nullptr);
     EXPECT_FALSE(ranges.ranges[0].no_map);
+    EXPECT_TRUE(ranges.ranges[0].reusable);
     region().properties.push_back({"status", fixture::strings({"disabled"})});
     ASSERT_EQ(discover(), nullptr);
     EXPECT_EQ(ranges.count, 0U);

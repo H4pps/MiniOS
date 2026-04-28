@@ -19,19 +19,19 @@ void set(uint8_t *bits, uint64_t index, bool value) {
 } // namespace
 namespace kernel {
 bool ReservationSet::add(MemoryRange r) {
-    if (!valid(r))
+    if (count > 32 || !valid(r) || (r.no_map && r.reusable))
         return false;
     // Coalescing is conservative: overlapping no-map ranges retain no-map on
     // their union. Adjacent ranges with different permissions stay separate.
     for (size_t i = 0; i < count;) {
         const auto old = ranges[i];
         const bool adjacent = (old.base + old.size == r.base || r.base + r.size == old.base) &&
-                              old.no_map == r.no_map;
+                              old.no_map == r.no_map && old.reusable == r.reusable;
         if (overlaps(old, r) || adjacent) {
             const auto start = old.base < r.base ? old.base : r.base;
             const auto end =
                 old.base + old.size > r.base + r.size ? old.base + old.size : r.base + r.size;
-            r = {start, end - start, r.no_map || old.no_map};
+            r = {start, end - start, r.no_map || old.no_map, r.reusable && old.reusable};
             for (size_t j = i + 1; j < count; ++j)
                 ranges[j - 1] = ranges[j];
             --count;
@@ -117,7 +117,9 @@ bool PageAllocator::initialize(const MemoryPlan &plan, const ReservationSet &res
         overlaps(plan.metadata, plan.boot.image))
         return false;
     for (size_t i = 0; i < reserved.count; ++i)
-        if (!valid(reserved.ranges[i]) || overlaps(plan.metadata, reserved.ranges[i]) ||
+        if (!valid(reserved.ranges[i]) ||
+            (reserved.ranges[i].no_map && reserved.ranges[i].reusable) ||
+            overlaps(plan.metadata, reserved.ranges[i]) ||
             overlaps(plan.boot.dtb, reserved.ranges[i]) ||
             overlaps(plan.boot.image, reserved.ranges[i]))
             return false;
@@ -141,6 +143,12 @@ bool PageAllocator::initialize(const MemoryPlan &plan, const ReservationSet &res
             ++reserved_;
         }
     }
+    for (size_t i = 0; i < reserved.count; ++i)
+        if (reserved.ranges[i].reusable && !reserved.ranges[i].no_map) {
+            reclaimable_[reclaimable_count_].base = reserved.ranges[i].base;
+            reclaimable_[reclaimable_count_].size = reserved.ranges[i].size;
+            ++reclaimable_count_;
+        }
     return true;
 }
 bool PageAllocator::allocate(uint64_t &address) {
@@ -154,6 +162,48 @@ bool PageAllocator::allocate(uint64_t &address) {
             return true;
         }
     return false;
+}
+bool PageAllocator::allocate_contiguous(size_t count, uint64_t &address) {
+    if (bits_ == nullptr || count == 0 || count > pages_)
+        return false;
+    uint64_t run = 0;
+    for (uint64_t i = 0; i < pages_; ++i) {
+        run = (bit(bits_, i) || bit(allocated_bits_, i)) ? 0 : run + 1;
+        if (run == count) {
+            const uint64_t start = i + 1 - run;
+            for (uint64_t j = start; j <= i; ++j)
+                set(allocated_bits_, j, true);
+            allocated_ += run;
+            address = base_ + start * page_size;
+            return true;
+        }
+    }
+    return false;
+}
+uint64_t PageAllocator::reclaim_reusable() {
+    if (bits_ == nullptr)
+        return 0;
+    uint64_t reclaimed = 0;
+    for (size_t i = 0; i < reclaimable_count_; ++i) {
+        const auto &range = reclaimable_[i];
+        if (range.base > UINT64_MAX - (page_size - 1))
+            continue;
+        uint64_t first = (range.base + page_size - 1) & ~(page_size - 1);
+        uint64_t end = (range.base + range.size) & ~(page_size - 1);
+        if (first < base_)
+            first = base_;
+        if (end > base_ + pages_ * page_size)
+            end = base_ + pages_ * page_size;
+        for (uint64_t p = first; p < end; p += page_size) {
+            const auto index = (p - base_) / page_size;
+            if (bit(bits_, index) && !bit(allocated_bits_, index)) {
+                set(bits_, index, false);
+                --reserved_;
+                ++reclaimed;
+            }
+        }
+    }
+    return reclaimed;
 }
 PageAllocator::Release PageAllocator::release(uint64_t address) {
     if (address % page_size != 0)

@@ -64,7 +64,8 @@ const char *discover_reservations(const fdt::View &view, kernel::ReservationSet 
         while (view.next(children, child) == fdt::Error::none)
             if (child.kind == fdt::Kind::begin && child.parent == event.node)
                 return "memory nested reservation unsupported";
-        if (!reservations.add({base, extent, no_map_error == fdt::Error::none}))
+        if (!reservations.add({base, extent, no_map_error == fdt::Error::none,
+                               reusable_error == fdt::Error::none}))
             return "memory excessive reservations";
     }
     return nullptr;

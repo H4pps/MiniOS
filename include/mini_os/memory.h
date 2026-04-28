@@ -6,6 +6,7 @@ constexpr uint64_t page_size = 4096;
 struct MemoryRange {
     uint64_t base, size;
     bool no_map;
+    bool reusable = false;
 };
 struct ReservationSet {
     constexpr ReservationSet() : ranges{}, count(0) {}
@@ -36,9 +37,11 @@ class PageAllocator {
   public:
     constexpr PageAllocator()
         : bits_(nullptr), allocated_bits_(nullptr), base_(0), pages_(0), reserved_(0),
-          allocated_(0), metadata_(0) {}
+          allocated_(0), metadata_(0), reclaimable_{}, reclaimable_count_(0) {}
     bool initialize(const MemoryPlan &plan, const ReservationSet &reserved, BitmapStorage storage);
     bool allocate(uint64_t &address);
+    bool allocate_contiguous(size_t pages, uint64_t &address);
+    uint64_t reclaim_reusable();
     enum class Release : uint8_t { success, unaligned, out_of_range, reserved, already_free };
     Release release(uint64_t address);
     MemoryStats stats() const;
@@ -46,6 +49,11 @@ class PageAllocator {
   private:
     uint8_t *bits_, *allocated_bits_;
     uint64_t base_, pages_, reserved_, allocated_, metadata_;
+    struct Reclaimable {
+        uint64_t base, size;
+    };
+    Reclaimable reclaimable_[32];
+    size_t reclaimable_count_;
 };
 void render_memory(TextWriter &writer, const MemoryStats &stats);
 } // namespace kernel
@@ -55,5 +63,6 @@ kernel::PageAllocator &page_allocator();
 const kernel::ReservationSet &memory_reservations();
 kernel::MemoryStats memory_stats();
 bool memory_self_test();
+uint64_t reclaim_reusable_memory();
 } // namespace platform
 #endif

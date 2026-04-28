@@ -1,4 +1,5 @@
 #include "mini_os/memory.h"
+#include "mini_os/arch.h"
 #include "mini_os/memory_resources.h"
 #include "mini_os/platform.h"
 #include "mini_os/resources.h"
@@ -39,6 +40,12 @@ const char *initialize_memory() {
                : "memory initialization failed";
 }
 kernel::MemoryStats memory_stats() { return allocator.stats(); }
+uint64_t reclaim_reusable_memory() {
+    const auto state = arch::mask_irq();
+    const auto reclaimed = allocator.reclaim_reusable();
+    arch::restore_irq(state);
+    return reclaimed;
+}
 bool memory_self_test() {
     const auto before = allocator.stats();
     uint64_t pages[8];
