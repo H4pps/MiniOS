@@ -119,6 +119,8 @@ bool PageAllocator::initialize(const MemoryPlan &plan, const ReservationSet &res
     for (size_t i = 0; i < reserved.count; ++i)
         if (!valid(reserved.ranges[i]) ||
             (reserved.ranges[i].no_map && reserved.ranges[i].reusable) ||
+            (i != 0 &&
+             reserved.ranges[i - 1].base + reserved.ranges[i - 1].size > reserved.ranges[i].base) ||
             overlaps(plan.metadata, reserved.ranges[i]) ||
             overlaps(plan.boot.dtb, reserved.ranges[i]) ||
             overlaps(plan.boot.image, reserved.ranges[i]))

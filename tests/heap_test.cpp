@@ -161,6 +161,13 @@ TEST(ReusablePages, PermanentOverlapPreventsReclaimAndContiguousAllocationIsAtom
     EXPECT_EQ(address, 0x9000U);
     for (uint64_t i = 0; i < 4; ++i)
         EXPECT_EQ(pages.release(address + i * 4096), kernel::PageAllocator::Release::success);
+    // Caller-visible storage must not bypass coalescing to reclaim permanent RAM.
+    kernel::ReservationSet malformed;
+    malformed.count = 2;
+    malformed.ranges[0] = {0x6000, 0x3000, false, true};
+    malformed.ranges[1] = {0x7000, 0x1000, false, false};
+    kernel::PageAllocator invalid;
+    EXPECT_FALSE(invalid.initialize(plan, malformed, {storage.data(), storage.size()}));
     EXPECT_FALSE(reserved.add({0xd000, 0x1000, true, true}));
     reserved.count = 33;
     EXPECT_FALSE(reserved.add({0, 1, false}));
