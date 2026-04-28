@@ -166,13 +166,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, physical-page allocation, MMU protection, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, physical-page allocation, MMU protection, heap/reclamation, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, and MMU tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, MMU, and heap tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -227,7 +227,8 @@ lowercase and case-sensitive:
 | `cpu` | Report DT CPU inventory and the boot CPU's current identity and state |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
 | `mmu` | Inspect translation registers, identity mappings, and permission probes |
-| `mem [test]` | Report page accounting or verify eight writable pages and restored accounting |
+| `mem [test\|reclaim]` | Inspect/test physical pages or reclaim reusable reservations |
+| `heap [test]` | Inspect the heap or verify allocation, fragmentation and coalescing |
 | `timer` | Report physical timer frequency, interval, counter, ticks, and missed periods |
 | `irq [test]` | Inspect GIC/IRQ counters or test a self-interrupt and context restoration |
 | `fault brk` | Trigger a breakpoint, report CPU context, and halt |
@@ -434,7 +435,8 @@ separate fake processes cover bad reports, stalled counters, diagnostics and cle
 `mem` reports complete 4 KiB RAM pages, reserved/allocated/free counts, and the
 physical bitmap address. `mem test` allocates eight distinct pages, verifies
 writable contents, releases them, and checks that accounting returns to its
-original values. Invalid arguments produce `usage: mem [test]`.
+original values. `mem reclaim` releases complete pages within reusable reservations;
+repeating it is harmless. Invalid arguments produce `usage: mem [test|reclaim]`.
 
 The allocator uses caller-provided reserved and allocated bitmaps and returns
 the lowest available page. It never implicitly zeroes allocated pages. Releases
@@ -447,7 +449,9 @@ and stack, and the bitmap metadata itself. Partial RAM boundary pages are
 excluded; any page intersecting a reservation stays reserved. Metadata is placed
 in a free aligned interval before writing its bitmaps. Up to 32 coalesced external
 ranges are supported. Overlapping ranges merge conservatively, retaining `no-map`
-on the union; reusable regions remain reserved. Dynamic reservations, translated
+on the union. Reusable regions initially remain reserved and are released only by
+`mem reclaim`. A union containing permanent memory stays permanent; boundary pages
+and `no-map` memory are never reclaimed. Dynamic reservations, translated
 or nested reserved-memory buses, arithmetic overflow, and external reservations
 conflicting with boot memory fail startup. The supported static layout follows
 the [reserved-memory binding](https://raw.githubusercontent.com/devicetree-org/dt-schema/main/dtschema/schemas/reserved-memory/reserved-memory.yaml).
@@ -457,6 +461,29 @@ accounting with 128/256 MiB RAM. Host sanitizer tests cover metadata placement,
 partial pages, exhaustion, reuse, invalid releases, reservation capacity,
 malformed DT properties and overflow. Fake processes verify incorrect accounting,
 incomplete reports, stderr draining, deadlines and cleanup.
+
+## Heap allocation
+
+A 256 KiB arena, backed by 64 contiguous physical pages, is initialized before
+boot confirmation. `heap` reports its address, total bytes, requested allocation
+bytes, free payload, metadata/padding overhead, block count and integrity state.
+`heap test` allocates eight differently sized blocks, verifies writable contents,
+frees them in a fragmented order and checks complete coalescing and restored
+accounting. Invalid arguments produce `usage: heap [test]`.
+
+The allocation-free allocator uses 16-byte alignment and first-fit placement.
+It rejects zero-size, overflowing and exhausted requests. Releases reject
+foreign/interior pointers and double frees; chain validation detects damaged
+headers before modifying the arena. Platform calls briefly mask IRQs. Allocation
+is explicit through the kernel heap interface; there is no hosted `malloc` or
+global `new`, and interrupt handlers do not allocate.
+
+`kernel.heap` checks repeated heap operations on A53/A57 and 128/256 MiB RAM.
+It also boots a modified DTB containing reusable, permanent and `no-map` regions,
+verifies exactly 64 reclaimed pages, and checks idempotence without disturbing
+heap accounting. Host sanitizer tests exercise randomized fragmentation,
+exhaustion, invalid frees and reclamation boundaries. Separate fake-process and
+DTB-editor tests check malformed data, diagnostics, deadlines and cleanup.
 
 ## Protected identity mappings
 
@@ -472,8 +499,8 @@ are read-only and non-executable. Writable RAM, data, BSS, bitmap metadata, tabl
 and stack are non-executable. All mappings deny EL0 access. RAM uses Normal
 non-cacheable attributes; UART and GIC use Device-nGnRnE. Null and unassigned
 addresses, no-map reservations and the stack guard stay unmapped. CPU caches
-remain disabled. Tables are immutable after activation; dynamic mappings and
-heap allocation remain future work.
+remain disabled. Tables are immutable after activation; dynamic mappings remain
+future work.
 
 `mmu` reports SCTLR/TCR/TTBR0/MAIR, owned table count, and architectural read/write
 translation probes. Text, rodata and DTB writes must be denied; stack and UART
@@ -537,7 +564,7 @@ other exception paths halt. D/A/F remain masked, while foreground IRQs are enabl
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator and MMU coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU and heap coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -546,7 +573,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 101 host tests per configuration and
-20 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 109 host tests per configuration and
+23 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.
