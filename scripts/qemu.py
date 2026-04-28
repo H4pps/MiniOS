@@ -17,6 +17,7 @@ import tempfile
 import time
 
 from verify_elf import inspect
+from fdt_edit import add_test_reservations
 
 SUCCESS = b"mini-os: boot OK"
 FAILURE = b"mini-os: boot FAIL:"
@@ -328,7 +329,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b"commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test]   inspect or test physical pages\r\n  mmu          inspect mappings and protection\r\n"
+HELP = b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n'
 
 
 def cpu_report_matcher(model, count):
@@ -546,11 +547,75 @@ def memory_exchanges(memory=128):
         yield from command_exchange("memory allocation", b"mem test  ", b"\r\nmem: test OK\r\n" + PROMPT)
         yield from command_exchange("memory restored", b"mem", report)
         yield from command_exchange("memory console", b"echo allocated", b"\r\necho: allocated\r\n" + PROMPT)
-    yield from command_exchange("memory usage", b"mem test extra", b"\r\nusage: mem [test]\r\n" + PROMPT)
+    yield from command_exchange("memory usage", b"mem test extra", b"\r\nusage: mem [test|reclaim]\r\n" + PROMPT)
 
 
 def memory_test(command, timeout=10):
     return scenario_test(command, timeout, (("cortex-a53",1,128),("cortex-a53",1,256)), memory_exchanges)
+
+
+def heap_exchanges(memory=128,reclaim=0):
+    yield next(uart_exchanges(memory))
+    baseline=[]
+    def report(data):
+        if PROMPT not in data: return None
+        match=re.fullmatch(rb"\r\nheap: arena=0x([0-9a-f]{16}) bytes=([0-9]+) allocated=([0-9]+) free=([0-9]+) overhead=([0-9]+) blocks=([0-9]+) state=OK\r\nmini-os> ",data)
+        if match is None: raise ValueError("Incorrect heap report formatting")
+        values=tuple(int(v,16 if i==0 else 10) for i,v in enumerate(match.groups()))
+        arena,size,allocated,free,overhead,blocks=values
+        if not (size==262144 and 0x40200000<=arena<=0x40000000+memory*1024*1024-size and arena%4096==0 and allocated+free+overhead==size and free>20000 and blocks>0): raise ValueError("Incorrect heap accounting")
+        if baseline and values!=baseline[0]: raise ValueError("Heap test changed accounting")
+        baseline[:]=[values];return len(data)
+    yield from command_exchange("heap baseline",b"heap",report)
+    for _ in range(3):
+        yield from command_exchange("heap allocation",b"heap test  ",b"\r\nheap: test OK\r\n"+PROMPT)
+        yield from command_exchange("heap coalescing",b"heap",report)
+    snapshots=[]
+    def memory_report(data):
+        if PROMPT not in data: return None
+        match=re.fullmatch(rb"\r\nmem: base=0x0000000040000000 size=0x([0-9a-f]{16}) pages=([0-9]+) reserved=([0-9]+) allocated=([0-9]+) free=([0-9]+) metadata=0x([0-9a-f]{16})\r\nmini-os> ",data)
+        if match is None: raise ValueError("Incorrect reclaim accounting format")
+        size,pages,reserved,allocated,free,metadata=(int(v,16 if i in (0,5) else 10) for i,v in enumerate(match.groups()))
+        if size!=memory*1024*1024 or pages!=size//4096 or reserved+allocated+free!=pages: raise ValueError("Incorrect reclaim accounting")
+        if snapshots:
+            old=snapshots[0]
+            if (reserved!=old[0]-reclaim or allocated!=old[1] or free!=old[2]+reclaim or metadata!=old[3]): raise ValueError("Incorrect reclaimed pages")
+        snapshots.append((reserved,allocated,free,metadata));return len(data)
+    yield from command_exchange("reclaim baseline",b"mem",memory_report)
+    yield from command_exchange("reclaim reusable",b"mem reclaim",f"\r\nmem: reclaimed pages={reclaim}\r\n".encode()+PROMPT)
+    yield from command_exchange("reclaim accounting",b"mem",memory_report)
+    yield from command_exchange("reclaim idempotence",b"mem reclaim",b"\r\nmem: reclaimed pages=0\r\n"+PROMPT)
+    yield from command_exchange("heap after reclaim",b"heap",report)
+    yield from command_exchange("heap usage",b"heap test extra",b"\r\nusage: heap [test]\r\n"+PROMPT)
+    yield from command_exchange("heap console",b"echo heap alive",b"\r\necho: heap alive\r\n"+PROMPT)
+
+
+def heap_test(command,timeout=10):
+    deadline=time.monotonic()+timeout
+    normal=scenario_test(command,timeout,CPU_SCENARIOS+(("cortex-a53",1,256),),heap_exchanges)
+    if not normal.success: return normal
+    with tempfile.TemporaryDirectory(prefix="mini-os-heap-") as directory:
+        path=Path(directory)/"reserved.dtb"
+        dump=list(command);index=dump.index("-machine")+1;dump[index]+=",dumpdtb="+str(path)
+        process=None; output=b""; diagnostics=b""
+        try:
+            remaining=deadline-time.monotonic()
+            if remaining<=0: raise TimeoutError("DTB dump deadline")
+            process=subprocess.Popen(dump,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            output,diagnostics=process.communicate(timeout=remaining)
+            if process.returncode!=0 or not path.is_file(): return BootResult(False,"DTB dump failed",normal.stdout+output,normal.stderr+diagnostics,process.pid)
+            path.write_bytes(add_test_reservations(path.read_bytes()))
+        except (OSError,ValueError,TimeoutError,subprocess.TimeoutExpired) as error:
+            if process is not None:
+                stop_process(process)
+                output,diagnostics=process.communicate()
+            return BootResult(False,f"Reserved DTB: {error}",normal.stdout+output,normal.stderr+diagnostics,process.pid if process else normal.pid)
+        finally:
+            if process is not None: stop_process(process)
+        remaining=deadline-time.monotonic()
+        if remaining<=0: return BootResult(False,"Timed out before reserved DTB boot",normal.stdout,normal.stderr,normal.pid)
+        reserved=serial_test([*command,"-dtb",str(path)],remaining,heap_exchanges(128,64))
+        return BootResult(reserved.success,reserved.reason,normal.stdout+reserved.stdout,normal.stderr+reserved.stderr,reserved.pid)
 
 
 def fault_report_matcher(kind, symbols):
@@ -677,7 +742,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -691,7 +756,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:

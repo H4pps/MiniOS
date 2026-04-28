@@ -35,7 +35,7 @@ while True:
     if command in (b'cpu', b'help') and arguments:
         response += b'usage: ' + command + b'\r\n'
     elif command == b'cpu': response += report.encode()
-    elif command == b'help': response += b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test]   inspect or test physical pages\r\n  mmu          inspect mappings and protection\r\n'
+    elif command == b'help': response += b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n'
     elif command == b'fault': response += b'usage: fault brk|undef|unmapped|readonly\r\n'
     elif command == b'echo': response += b'echo: ' + arguments + b'\r\n'
     elif command: response += b'mini-os: unknown command: ' + command + b'\r\n'

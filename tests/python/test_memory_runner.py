@@ -9,7 +9,7 @@ CONSOLE = ('memory = 256 if \'256M\' in sys.argv else 128\nqemu_ready = '+repr(q
     if command == b'mem':
         response += f'mem: base=0x0000000040000000 size=0x{memory*1024*1024:016x} pages={memory*256} reserved=600 allocated=0 free={memory*256-600} metadata=0x0000000040220000\r\n'.encode()
     elif command == b'mem test': response += b'mem: test OK\r\n'
-    elif command.startswith(b'mem'): response += b'usage: mem [test]\r\n'
+    elif command.startswith(b'mem'): response += b'usage: mem [test|reclaim]\r\n'
     elif command == b'irq':''')
 class MemoryRunnerTests(unittest.TestCase):
     def run_fake(self, body, timeout=4):
