@@ -294,6 +294,39 @@ def uart_test(command, timeout=10):
     return serial_test(command, timeout, uart_exchanges())
 
 
+def uart_irq_exchanges(memory=128):
+    yield from uart_exchanges(memory)
+    observed = []
+    def match(data):
+        suffix = b"\r\n" + PROMPT
+        if not data.endswith(suffix):
+            return None
+        report = re.fullmatch(rb"\r\nuart: mode=irq interrupt=(\d+) interrupts=(\d+) received=(\d+) errors=(\d+) dropped=(\d+) queued=(\d+) sleeps=(\d+)\r\nmini-os> ", data)
+        if report is None:
+            raise ValueError("Incorrect UART interrupt report")
+        irq, delivered, received, errors, dropped, queued, sleeps = map(int, report.groups())
+        if irq != 33 or delivered == 0 or received < 5 or errors or dropped or queued or sleeps == 0:
+            raise ValueError("Incorrect UART IRQ resources, reception or queue accounting")
+        if observed and (received <= observed[-1][0] or delivered <= observed[-1][1] or sleeps < observed[-1][2]):
+            raise ValueError("UART interrupt counters did not progress")
+        observed.append((received, delivered, sleeps))
+        return len(data)
+    for round in range(3):
+        yield from command_exchange("UART IRQ accounting", b"uart", match)
+        payload = b"".join(f"echo burst{round}-{i}\n".encode() for i in range(12))
+        expected = b"".join(f"echo burst{round}-{i}\r\necho: burst{round}-{i}\r\nmini-os> ".encode() for i in range(12))
+        yield "queued UART burst", payload, expected
+        yield "idle input waiting", b"", serial_pause(0.03)
+    yield from command_exchange("UART final accounting", b"uart", match)
+    yield from command_exchange("UART argument rejection", b"uart x", b"\r\nusage: uart\r\n" + PROMPT)
+    yield from command_exchange("IRQ after UART reception", b"irq test", b"\r\nirq: test OK\r\n" + PROMPT)
+    yield from command_exchange("heap after UART reception", b"heap test", b"\r\nheap: test OK\r\n" + PROMPT)
+
+
+def uart_irq_test(command, timeout=10):
+    return scenario_test(command, timeout, CPU_SCENARIOS, uart_irq_exchanges)
+
+
 def fdt_test(command, timeout=10):
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("Serial deadline must be positive")
@@ -329,7 +362,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n'
+HELP = b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n  uart         inspect receive interrupts and queue\r\n'
 
 
 def cpu_report_matcher(model, count):
@@ -742,7 +775,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -756,7 +789,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
