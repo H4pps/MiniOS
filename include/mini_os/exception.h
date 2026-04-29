@@ -37,7 +37,7 @@ struct ExceptionInfo {
     uint8_t dfsc;
     const char *abort_reason;
 };
-enum class FaultKind : uint8_t { breakpoint, undefined_instruction, unmapped, readonly };
+enum class FaultKind : uint8_t { breakpoint, undefined_instruction, unmapped, readonly, stack };
 ExceptionInfo decode_exception(const ExceptionFrame &frame);
 bool install_exception_vectors();
 [[noreturn]] void trigger_fault(FaultKind kind);
