@@ -127,6 +127,8 @@ class ReceiveInterrupt : public testing::Test {
                                   return s.fifo.at(s.consumed++);
                               return 0U;
                           },
+                          // Fixed MMIO callback ABI: address precedes register value.
+                          // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
                           [](void *p, uintptr_t address, uint32_t value) {
                               auto &s = *static_cast<ReceiveInterrupt *>(p);
                               if (address == 0x1044)
