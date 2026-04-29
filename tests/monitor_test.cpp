@@ -36,7 +36,8 @@ TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
         "registers\n  echo [text]  echo text\n  fault brk|undef|unmapped|readonly  trigger a fatal "
         "exception\n  irq [test]   inspect or test interrupts\n  timer        inspect timer "
         "counters\n  mem [test|reclaim]  inspect, test or reclaim physical pages\n  mmu          "
-        "inspect mappings and protection\n  heap [test]  inspect or test heap allocation\n");
+        "inspect mappings and protection\n  heap [test]  inspect or test heap allocation\n  uart   "
+        "      inspect receive interrupts and queue\n");
     EXPECT_EQ(response("help x"), "usage: help\n");
     EXPECT_EQ(response("cpu x"), "usage: cpu\n");
     EXPECT_EQ(response("CPU x"), "mini-os: unknown command: CPU\n");

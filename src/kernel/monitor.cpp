@@ -34,6 +34,8 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::cpu;
     } else if (command.name.equals("mmu")) {
         command.kind = CommandKind::mmu;
+    } else if (command.name.equals("uart")) {
+        command.kind = CommandKind::uart;
     } else if (command.name.equals("timer")) {
         command.kind = CommandKind::timer;
     } else if (command.name.equals("echo")) {
@@ -67,7 +69,8 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::unknown;
     }
     if ((command.kind == CommandKind::help || command.kind == CommandKind::cpu ||
-         command.kind == CommandKind::timer || command.kind == CommandKind::mmu) &&
+         command.kind == CommandKind::timer || command.kind == CommandKind::uart ||
+         command.kind == CommandKind::mmu) &&
         command.arguments.size != 0) {
         command.kind = CommandKind::usage;
     }
@@ -84,6 +87,7 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::mem_reclaim:
     case CommandKind::mem:
     case CommandKind::mem_test:
+    case CommandKind::uart:
     case CommandKind::timer:
     case CommandKind::irq:
     case CommandKind::irq_test:
@@ -98,7 +102,7 @@ void render_text_command(TextWriter &writer, const Command &command) {
             "fatal exception\n  irq [test]   inspect or test interrupts\n  timer        inspect "
             "timer counters\n  mem [test|reclaim]  inspect, test or reclaim physical pages\n  mmu  "
             "        inspect mappings and protection\n  heap [test]  inspect or test heap "
-            "allocation\n");
+            "allocation\n  uart         inspect receive interrupts and queue\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");

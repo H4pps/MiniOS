@@ -38,6 +38,8 @@ void set_timer_enabled(bool enabled);
 uint64_t mask_irq();
 void restore_irq(uint64_t state);
 void enable_irq();
+// Called with IRQs masked; a pending interrupt wakes WFI before it is unmasked.
+void wait_for_interrupt();
 bool initialize_gic_cpu();
 uint32_t acknowledge_irq();
 void end_irq(uint32_t id);

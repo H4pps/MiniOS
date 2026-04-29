@@ -10,6 +10,7 @@ enum class CommandKind : uint8_t {
     cpu,
     echo,
     timer,
+    uart,
     mmu,
     heap,
     heap_test,

@@ -7,6 +7,7 @@
 #include "mini_os/memory.h"
 #include "mini_os/mmu.h"
 #include "mini_os/platform.h"
+#include "mini_os/serial_queue.h"
 #include "mini_os/timer.h"
 
 #include <stdint.h>
@@ -60,6 +61,9 @@ extern "C" [[noreturn]] void kernel_entry() {
         fail(reason);
     }
     if (const auto *reason = platform::initialize_heap()) {
+        fail(reason);
+    }
+    if (const auto *reason = platform::initialize_uart_interrupts()) {
         fail(reason);
     }
     arch::enable_irq();

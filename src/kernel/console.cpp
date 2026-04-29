@@ -8,6 +8,7 @@
 #include "mini_os/mmu.h"
 #include "mini_os/monitor.h"
 #include "mini_os/platform.h"
+#include "mini_os/serial_queue.h"
 #include "mini_os/timer.h"
 
 namespace {
@@ -21,7 +22,8 @@ namespace kernel {
     for (;;) {
         const auto input = platform::early_read();
         if (input.status == serial::ReadStatus::empty) {
-            continue; // Receive interrupts are disabled; WFI would stall input.
+            platform::wait_for_console_input();
+            continue;
         }
         if (input.status == serial::ReadStatus::error) {
             editor.cancel();
@@ -43,7 +45,9 @@ namespace kernel {
             platform::early_putc('\n');
             {
                 const auto command = parse_command({editor.text(), editor.length()});
-                if (command.kind == CommandKind::cpu) {
+                if (command.kind == CommandKind::uart) {
+                    serial::render_uart(writer, platform::uart_stats());
+                } else if (command.kind == CommandKind::cpu) {
                     render_cpu(writer, platform::cpu_inventory(), arch::read_cpu_snapshot());
                 } else if (command.kind == CommandKind::mmu) {
                     platform::render_mmu(writer);

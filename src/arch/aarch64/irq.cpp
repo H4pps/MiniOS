@@ -6,6 +6,7 @@ uint64_t mask_irq() {
     return state;
 }
 void restore_irq(uint64_t state) { asm volatile("msr DAIF, %0" : : "r"(state) : "memory"); }
+void wait_for_interrupt() { asm volatile("dsb sy\n\twfi" ::: "memory"); }
 void enable_irq() { asm volatile("dsb sy\n\tmsr daifclr, #2\n\tisb" : : : "memory"); }
 bool initialize_gic_cpu() {
     asm volatile("dsb sy" ::: "memory");
