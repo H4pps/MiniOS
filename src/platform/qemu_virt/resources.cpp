@@ -316,6 +316,7 @@ ResourceError discover_resources(const fdt::View &view, PlatformResources &resou
     if (uart_base < ram_base + ram_size && ram_base < uart_base + uart_size) {
         return ResourceError::invalid_uart;
     }
+    resources.uart_node = uart;
     resources.uart_base = uart_base;
     resources.uart_size = uart_size;
     resources.uart_clock_hz = frequency;

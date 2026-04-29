@@ -23,6 +23,7 @@ struct PlatformResources {
     uint64_t ram_base;
     uint64_t ram_size;
     fdt::Bytes dtb;
+    fdt::Node uart_node;
 };
 struct BootLayout {
     uint64_t dtb_base;

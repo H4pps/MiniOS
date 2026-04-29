@@ -48,6 +48,7 @@ const char *initialize_discovered_resources() {
     if (cpu_error != CpuDiscoveryError::none) {
         return error_text(cpu_error);
     }
+    saved_resources.uart_node = resources.uart_node;
     saved_resources.uart_base = resources.uart_base;
     saved_resources.uart_size = resources.uart_size;
     saved_resources.uart_clock_hz = resources.uart_clock_hz;
