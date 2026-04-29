@@ -30,8 +30,8 @@ allocation, and protected identity mappings are verified natively and in
 ARM64/AMD64 containers. AMD64 uses local emulation. Each of the four foundation
 operations passed its complete checks before the next began.
 
-The current baseline passes **109 host tests per configuration** (debug,
-release, sanitizers) and **23 CTests per kernel preset** (debug/release) in all
+The current baseline passes **117 host tests per configuration** (debug,
+release, sanitizers) and **25 CTests per kernel preset** (debug/release) in all
 three environments. Remote CI verification remains pending.
 
 - [x] **Boot + linker script**
@@ -97,10 +97,11 @@ three environments. Remote CI verification remains pending.
   - [x] Preserve no-map exclusions, reject Device/RAM aliasing, and leave null/stack guard unmapped.
   - [x] Verify translation probes, timer/SGI/allocator operation and controlled data aborts at 128/256 MiB on A53/A57.
   - [x] Pass native, ARM64 Docker, and emulated AMD64 checks: 101 host tests/configuration and 20 CTests/kernel preset.
-- [ ] **Further memory and UART work**
+- [x] **Further memory and UART work**
   - [x] Add heap allocation and reclaim reusable reservations.
   - [x] Verify heap fragmentation, coalescing, invalid frees and DTB reclamation on native/ARM64/AMD64: 109 host tests/configuration, 23 CTests/kernel preset.
-  - [ ] Add interrupt-driven UART reception.
+  - [x] Add interrupt-driven UART reception.
+  - [x] Verify bounded receive handlers, queue/error recovery, idle wakeups and serial bursts on native/ARM64/AMD64: 117 host tests/configuration, 25 CTests/kernel preset.
 - [ ] **Further CPU discovery and startup**
   - [ ] Discover socket/cluster/core/thread hierarchy from `cpu-map`.
   - [ ] Implement secondary CPU startup and track actual online state.
@@ -123,5 +124,5 @@ three environments. Remote CI verification remains pending.
   - [ ] Verify reports against controlled workloads under QEMU.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap tests, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap/UART-IRQ tests, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.

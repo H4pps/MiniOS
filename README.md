@@ -166,13 +166,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, physical-page allocation, MMU protection, heap/reclamation, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, physical-page allocation, MMU protection, heap/reclamation, UART IRQs, ELF, and runner checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, MMU, and heap tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, MMU, heap, and UART IRQ tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -229,6 +229,7 @@ lowercase and case-sensitive:
 | `mmu` | Inspect translation registers, identity mappings, and permission probes |
 | `mem [test\|reclaim]` | Inspect/test physical pages or reclaim reusable reservations |
 | `heap [test]` | Inspect the heap or verify allocation, fragmentation and coalescing |
+| `uart` | Report receive IRQ, input queue, error/drop, and idle-wait counters |
 | `timer` | Report physical timer frequency, interval, counter, ticks, and missed periods |
 | `irq [test]` | Inspect GIC/IRQ counters or test a self-interrupt and context restoration |
 | `fault brk` | Trigger a breakpoint, report CPU context, and halt |
@@ -273,21 +274,21 @@ Linker assertions reject runtime constructors/destructors, TLS, and RAM overflow
 Architecture startup masks interrupts, selects the stack, clears BSS, and calls
 `kernel_entry`. After initializing the bootstrap UART and checking EL1, the entry
 installs and verifies `VBAR_EL1`, then checks initialized data, zeroed BSS, and
-alignment before confirming boot and polling the serial console continuously. Receive
-interrupts are disabled, so the idle console does not use `WFI`. Failures
+alignment before resource discovery and boot confirmation. The normal console
+uses receive interrupts and waits with `WFI` when its queue is empty. Failures
 with a working console print `mini-os: boot FAIL: <reason>`.
 
 The bootstrap console uses UART address `0x09000000` and a 24 MHz clock for
 startup diagnostics. Before reporting boot success, the platform discovers and
 validates the UART base, register extent, clock, and RAM, then reinitializes the
-driver with the discovered UART configuration. Reception and transmission use
-polling at 115200 baud, 8N1,
-with interrupts and DMA disabled; the platform converts newlines to CRLF.
+driver with the discovered UART configuration. Bootstrap reception and transmission
+use polling at 115200 baud, 8N1 with interrupts and DMA disabled. Normal reception
+switches to IRQs before boot confirmation; transmission remains polling. The
+platform converts newlines to CRLF.
 The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
 for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
 CPU hierarchy discovery, secondary CPU startup, synchronous exception recovery,
-interrupt-driven UART reception,
 EL2/EL3 transitions,
 and scheduling remain later milestones.
 
@@ -404,8 +405,35 @@ Only registered sources are enabled. Architectural spurious IDs return without
 EOI; real unregistered interrupts report their ID and halt. The CPU interface
 uses combined EOI/deactivation, and handlers run with IRQ nesting disabled.
 Entry/return assembly preserves the complete integer context, ELR, and SPSR.
-Foreground snapshots briefly mask and restore IRQs. UART reception remains
-polling, with UART interrupt delivery disabled.
+Foreground snapshots briefly mask and restore IRQs. UART receive delivery uses
+the discovered level-triggered SPI; transmission remains polling.
+
+## Interrupt-driven serial input
+
+Before enabling foreground IRQs, the platform discovers the chosen PL011's
+level-triggered SPI through the selected GIC, supporting inherited
+`interrupt-parent` or one `interrupts-extended` specifier. Ambiguous descriptions,
+unsupported flags and mismatched controllers fail startup. The driver enables RX,
+receive-timeout and receive-error causes; TX interrupts and DMA stay disabled.
+A handler performs at most 64 FIFO reads, preserves per-byte errors and clears
+latched timeout/error causes before EOI. FIFO reads deassert the RX level.
+
+A 256-event queue separates the IRQ handler from line editing and command
+execution. Queue operations run with IRQs masked on the boot CPU. Overflow
+cancels buffered input with an overrun event; the editor rejects the affected line
+through Enter and reports `mini-os: uart RX error`. No truncated command executes.
+The idle console masks IRQs, rechecks the queue, waits for an interrupt, then
+restores the previous mask. Serial output and fatal reporting remain polling.
+
+`uart` reports the discovered interrupt ID, delivery and receive-event counts,
+hardware errors, dropped queued events, queue depth and idle sleeps. It rejects
+arguments with `usage: uart`. `kernel.uart_irq` verifies increasing delivery and
+reception counters, idle wakeups, repeated bursts, every editing regression,
+and subsequent SGI/heap commands on A53 with one/four CPUs and A57 with one CPU.
+Host fixtures check masks, bounded FIFO draining and hardware-error clearing;
+queue tests verify ordering, wraparound, overflow cancellation and recovery.
+Separate fake processes exercise incorrect accounting, fragmented output,
+closed input, deadlines, stderr draining and cleanup.
 
 ## ARM Generic Timer
 
@@ -419,7 +447,7 @@ rounded up from `CNTFRQ_EL0 / 100`. Interrupts update counters and the next abso
 compare deadline without serial output. Late delivery skips elapsed periods in
 one calculation, records missed periods, and rearms before GIC EOI. Counter
 arithmetic assumes observations separated by less than half the 64-bit counter
-range. UART input continues polling.
+range. UART reception uses its own IRQ source.
 
 `timer` takes a coherent snapshot with IRQs briefly masked, then restores the
 foreground state. For QEMU's usual 62.5 MHz counter the report begins
@@ -564,7 +592,7 @@ other exception paths halt. D/A/F remain masked, while foreground IRQs are enabl
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator, MMU and heap coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU, heap and UART IRQ coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -573,7 +601,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 109 host tests per configuration and
-23 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 117 host tests per configuration and
+25 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.
