@@ -4,12 +4,16 @@
 .global mini_os_exception_vectors
 mini_os_exception_vectors:
 
-// Save x0/x1 before using a register to identify the vector.
+// Save scratch registers without touching the interrupted stack.
+// TPIDR_EL1 owns a per-CPU context; TPIDRRO_EL0 is kernel entry scratch.
 .macro vector number
     .global mini_os_vector_\number
 mini_os_vector_\number:
-    stp x0, x1, [sp, #-MINI_OS_FRAME_SIZE]!
-    mov x0, #\number
+    msr tpidrro_el0, x0
+    mrs x0, tpidr_el1
+    str x1, [x0, #MINI_OS_CONTEXT_X1]
+    mov x1, #\number
+    str x1, [x0, #MINI_OS_CONTEXT_VECTOR]
     b mini_os_exception_entry
     .if (. - mini_os_vector_\number) > 128
         .error "Exception vector exceeds 128 bytes"
@@ -38,7 +42,18 @@ mini_os_exception_vectors_end:
 .section .text.exception_entry, "ax"
 .type mini_os_exception_entry, %function
 mini_os_exception_entry:
-    // x0 is the vector index; original x0/x1 are already saved.
+    msr daifset, #0xf
+    ldr x1, [x0, #MINI_OS_CONTEXT_ACTIVE]
+    cbnz x1, mini_os_exception_nested
+    mov x1, #1
+    str x1, [x0, #MINI_OS_CONTEXT_ACTIVE]
+    mov x1, sp
+    str x1, [x0, #MINI_OS_CONTEXT_SP]
+    msr spsel, #1
+    ldr x1, [x0, #MINI_OS_CONTEXT_STACK]
+    mov sp, x1
+    sub sp, sp, #MINI_OS_FRAME_SIZE
+    // Preserve x2-x30 before using any of them as scratch.
     stp x2, x3, [sp, #16]
     stp x4, x5, [sp, #32]
     stp x6, x7, [sp, #48]
@@ -54,19 +69,14 @@ mini_os_exception_entry:
     stp x26, x27, [sp, #208]
     stp x28, x29, [sp, #224]
     str x30, [sp, #240]
-    str x0, [sp, #MINI_OS_FRAME_VECTOR]
-    msr daifset, #0xf
-
-    // Stop recursion before entering diagnostics, including UART faults.
-    adrp x1, mini_os_exception_active
-    add x1, x1, :lo12:mini_os_exception_active
-    ldr x2, [x1]
-    cbnz x2, mini_os_exception_nested
-    mov x2, #1
-    str x2, [x1]
-
-    add x1, sp, #MINI_OS_FRAME_SIZE
+    ldr x1, [x0, #MINI_OS_CONTEXT_VECTOR]
+    str x1, [sp, #MINI_OS_FRAME_VECTOR]
+    ldr x1, [x0, #MINI_OS_CONTEXT_SP]
     str x1, [sp, #MINI_OS_FRAME_ENTRY_SP]
+    ldr x1, [x0, #MINI_OS_CONTEXT_X1]
+    str x1, [sp, #8]
+    mrs x1, tpidrro_el0
+    str x1, [sp]
     mrs x1, sp_el0
     str x1, [sp, #MINI_OS_FRAME_SP_EL0]
     mrs x1, esr_el1
@@ -80,13 +90,14 @@ mini_os_exception_entry:
     mov x0, sp
     bl mini_os_exception_handler
     // Only a handled EL1h IRQ returns. Keep IRQ masked until ERET restores SPSR.
-    adrp x0, mini_os_exception_active
-    add x0, x0, :lo12:mini_os_exception_active
-    str xzr, [x0]
+    mrs x0, tpidr_el1
+    str xzr, [x0, #MINI_OS_CONTEXT_ACTIVE]
     ldr x0, [sp, #MINI_OS_FRAME_ELR]
     msr elr_el1, x0
     ldr x0, [sp, #MINI_OS_FRAME_SPSR]
     msr spsr_el1, x0
+    ldr x0, [sp, #MINI_OS_FRAME_SP_EL0]
+    msr sp_el0, x0
     ldp x2, x3, [sp, #16]
     ldp x4, x5, [sp, #32]
     ldp x6, x7, [sp, #48]
@@ -102,15 +113,15 @@ mini_os_exception_entry:
     ldp x26, x27, [sp, #208]
     ldp x28, x29, [sp, #224]
     ldr x30, [sp, #240]
-    ldp x0, x1, [sp], #MINI_OS_FRAME_SIZE
+    ldr x0, [sp]
+    msr tpidrro_el0, x0
+    ldr x1, [sp, #8]
+    ldr x0, [sp, #MINI_OS_FRAME_ENTRY_SP]
+    mov sp, x0
+    mrs x0, tpidrro_el0
     eret
 mini_os_exception_nested:
     msr daifset, #0xf
 1:  wfi
     b 1b
 .size mini_os_exception_entry, . - mini_os_exception_entry
-
-.section .bss.exception_active, "aw", %nobits
-.balign 8
-mini_os_exception_active:
-    .space 8

@@ -37,6 +37,11 @@ SECTIONS {
         . += 64K;
         __stack_top = .;
     } > RAM :data
+    .exception_stacks (NOLOAD) : ALIGN(4096) {
+        __exception_stacks_start = .;
+        . += 8 * 20K; /* Each CPU: unmapped 4 KiB guard + 16 KiB exception stack. */
+        __exception_stacks_end = .;
+    } > RAM :data
     .unsupported_runtime : {
         KEEP(*(.preinit_array .preinit_array.* .init_array .init_array.*))
         KEEP(*(.fini_array .fini_array.* .ctors .ctors.* .dtors .dtors.*))
@@ -56,3 +61,5 @@ ASSERT(SIZEOF(.vectors) == 2048, "Expected sixteen 128-byte vectors")
 ASSERT((__stack_bottom & 4095) == 0 && (__stack_top & 4095) == 0, "Stack pages must be aligned")
 ASSERT(__stack_guard_end == __stack_bottom && __stack_guard_end - __stack_guard == 4096, "Expected one stack guard page")
 ASSERT((__text_end & 4095) == 0 && (__rodata_end & 4095) == 0, "Permission boundaries must be page aligned")
+
+ASSERT((__exception_stacks_start & 4095) == 0 && __exception_stacks_end - __exception_stacks_start == 8 * 20K, "Expected eight guarded exception stacks")

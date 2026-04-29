@@ -1,38 +1,6 @@
 // Deliberate fatal triggers. Every GPR has a distinct, zero-extended sentinel.
 .section .text.fault_triggers, "ax"
-.macro sentinels
-    mov x0, #256
-    mov x1, #257
-    mov x2, #258
-    mov x3, #259
-    mov x4, #260
-    mov x5, #261
-    mov x6, #262
-    mov x7, #263
-    mov x8, #264
-    mov x9, #265
-    mov x10, #266
-    mov x11, #267
-    mov x12, #268
-    mov x13, #269
-    mov x14, #270
-    mov x15, #271
-    mov x16, #272
-    mov x17, #273
-    mov x18, #274
-    mov x19, #275
-    mov x20, #276
-    mov x21, #277
-    mov x22, #278
-    mov x23, #279
-    mov x24, #280
-    mov x25, #281
-    mov x26, #282
-    mov x27, #283
-    mov x28, #284
-    mov x29, #285
-    mov x30, #286
-.endm
+#include "register_sentinels.inc"
 
 .global mini_os_trigger_brk
 .type mini_os_trigger_brk, %function
@@ -82,6 +50,20 @@ mini_os_fault_readonly_site:
 1:  wfi
     b 1b
 .size mini_os_trigger_readonly, . - mini_os_trigger_readonly
+
+.global mini_os_trigger_stack
+.type mini_os_trigger_stack, %function
+mini_os_trigger_stack:
+    sentinels
+    ldr x16, =__stack_guard
+    add x16, x16, #2048
+    mov sp, x16
+.global mini_os_fault_stack_site
+mini_os_fault_stack_site:
+    str x0, [sp]
+1:  wfi
+    b 1b
+.size mini_os_trigger_stack, . - mini_os_trigger_stack
 
 .section .rodata.fault_probe, "a"
 .balign 8

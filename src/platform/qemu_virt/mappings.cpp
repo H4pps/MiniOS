@@ -1,4 +1,5 @@
 #include "mini_os/mmu.h"
+#include "mini_os/recovery.h"
 namespace {
 bool valid(kernel::MemoryRange r) {
     return r.size != 0 && r.base < arch::identity_limit && r.size <= arch::identity_limit - r.base;
@@ -26,6 +27,12 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
         l.rodata.base + l.rodata.size > l.guard.base || !valid(l.uart) || !valid(l.distributor) ||
         !valid(l.redistributors))
         return "mmu invalid mapping layout";
+    if (l.exception_stacks.size != 0 &&
+        (!aligned(l.exception_stacks) || !contains(l.image, l.exception_stacks) ||
+         l.exception_stacks.size != arch::exception_cpus * arch::exception_stack_stride ||
+         overlap(l.exception_stacks, l.text) || overlap(l.exception_stacks, l.rodata) ||
+         overlap(l.exception_stacks, l.stack) || overlap(l.exception_stacks, l.guard)))
+        return "mmu invalid exception stacks";
     for (size_t i = 0; i < reservations.count; ++i) {
         const auto r = reservations.ranges[i];
         if (r.size == 0 || r.size > UINT64_MAX - r.base ||
@@ -47,7 +54,10 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
                 return "mmu device overlaps no-map page";
     }
     for (uint64_t page = l.ram.base; page < l.ram.base + l.ram.size; page += 4096) {
-        if (page == 0 || page == l.guard.base || reservations.excludes(page))
+        if (page == 0 || page == l.guard.base || reservations.excludes(page) ||
+            (page >= l.exception_stacks.base &&
+             page - l.exception_stacks.base < l.exception_stacks.size &&
+             (page - l.exception_stacks.base) % arch::exception_stack_stride == 0))
             continue;
         auto kind = arch::MappingKind::writable;
         if (page >= l.text.base && page - l.text.base < l.text.size)

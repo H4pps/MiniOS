@@ -22,6 +22,7 @@ add_executable(mini_os_kernel
   src/arch/aarch64/irq_probe.S
   src/platform/qemu_virt/interrupts.cpp
   src/arch/aarch64/vectors.S
+  src/arch/aarch64/recovery_probe.S
   src/arch/aarch64/faults.S
   src/arch/aarch64/exceptions.cpp
   src/platform/qemu_virt/console.cpp

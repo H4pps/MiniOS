@@ -2,6 +2,7 @@
 #include "mini_os/exception.h"
 #include "mini_os/mmu.h"
 #include "mini_os/monitor.h"
+#include "mini_os/recovery.h"
 #include <array>
 #include <gtest/gtest.h>
 #include <string>
@@ -204,4 +205,32 @@ TEST(DataAbort, ExactReportAndMonitorFaultArguments) {
     EXPECT_EQ(kernel::parse_command({"fault readonly x", 16}).kind, kernel::CommandKind::usage);
     EXPECT_EQ(kernel::parse_command({"mmu  ", 5}).kind, kernel::CommandKind::mmu);
     EXPECT_EQ(kernel::parse_command({"mmu x", 5}).kind, kernel::CommandKind::usage);
+}
+
+TEST_F(Tables, EmergencyStacksAreWritableWithOneUnmappedGuardPerCpu) {
+    kernel::ReservationSet reservations;
+    layout.exception_stacks = {0x40018000, arch::exception_cpus * arch::exception_stack_stride,
+                               false};
+    layout.image.size += layout.exception_stacks.size;
+    ASSERT_TRUE(tables.initialize(memory));
+    auto bad = layout;
+    bad.exception_stacks.size -= 4096;
+    EXPECT_NE(platform::build_identity_map(tables, bad, reservations), nullptr);
+    bad = layout;
+    bad.exception_stacks.base = layout.stack.base;
+    EXPECT_NE(platform::build_identity_map(tables, bad, reservations), nullptr);
+    ASSERT_EQ(platform::build_identity_map(tables, layout, reservations), nullptr);
+    for (size_t i = 0; i < 8; ++i) {
+        const auto guard = layout.exception_stacks.base + i * arch::exception_stack_stride;
+        EXPECT_EQ(tables.descriptor(guard), 0U);
+        for (uint64_t page = guard + 4096; page < guard + arch::exception_stack_stride;
+             page += 4096) {
+            const auto descriptor = tables.descriptor(page);
+            EXPECT_NE(descriptor & 1, 0U);
+            EXPECT_EQ(descriptor & 0x80, 0U);
+            EXPECT_NE(descriptor & (1ULL << 53), 0U);
+            EXPECT_NE(descriptor & (1ULL << 54), 0U);
+        }
+    }
+    tables.discard();
 }
