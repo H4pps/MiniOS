@@ -26,12 +26,13 @@ verification and relevant host tests; a successful build alone is insufficient.
 
 Boot, the editable serial monitor, device-tree discovery, CPU inspection,
 fatal diagnostics, GICv3 IRQ delivery, recurring timer ticks, physical page
-allocation, and protected identity mappings are verified natively and in
+allocation, protected identity mappings, heap/reclamation, UART IRQ reception,
+and controlled exception recovery with emergency stacks are verified natively and in
 ARM64/AMD64 containers. AMD64 uses local emulation. Each of the four foundation
 operations passed its complete checks before the next began.
 
-The current baseline passes **117 host tests per configuration** (debug,
-release, sanitizers) and **25 CTests per kernel preset** (debug/release) in all
+The current baseline passes **122 host tests per configuration** (debug,
+release, sanitizers) and **28 CTests per kernel preset** (debug/release) in all
 three environments. Remote CI verification remains pending.
 
 - [x] **Boot + linker script**
@@ -119,10 +120,11 @@ three environments. Remote CI verification remains pending.
   - [ ] Implement the first required VirtIO device with platform-discovered resources.
   - [ ] Verify device initialization and a complete I/O operation under QEMU.
 - [ ] **Diagnostics/performance tools**
-  - [ ] Add exception recovery and emergency-stack diagnostics.
+  - [x] Add exception recovery and emergency-stack diagnostics.
+  - [x] Verify exact fixups, restored registers/flags/SP, unarmed fatal faults and bad-SP reports on native/ARM64/AMD64: 122 host tests/configuration, 28 CTests/kernel preset.
   - [ ] Expose kernel diagnostics and basic performance measurements.
   - [ ] Verify reports against controlled workloads under QEMU.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap/UART-IRQ tests, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap/UART-IRQ/recovery tests, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.

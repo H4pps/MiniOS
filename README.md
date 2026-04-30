@@ -172,7 +172,7 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, MMU, heap, and UART IRQ tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, MMU, heap, UART IRQ, and recovery tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -236,6 +236,8 @@ lowercase and case-sensitive:
 | `fault undef` | Execute an undefined instruction, report CPU context, and halt |
 | `fault unmapped` | Read an unassigned address, report a translation fault, and halt |
 | `fault readonly` | Write a read-only probe, report a permission fault, and halt |
+| `fault stack` | Move SP into its unmapped guard, report context on an emergency stack, and halt |
+| `recover brk` / `recover undef` | Verify controlled exception return and restored registers/flags/SP |
 
 Leading spaces and spaces separating a command from its arguments are ignored.
 `help` and `cpu` accept trailing spaces but reject arguments with `usage: help`
@@ -288,7 +290,7 @@ platform converts newlines to CRLF.
 The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
 for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
-CPU hierarchy discovery, secondary CPU startup, synchronous exception recovery,
+CPU hierarchy discovery, secondary CPU startup,
 EL2/EL3 transitions,
 and scheduling remain later milestones.
 
@@ -540,12 +542,12 @@ Host tests cover descriptor bits, overlaps, address boundaries, exhaustion,
 cleanup, unsupported hardware, reserved exclusions and sealed mappings. Fake
 normal/fault runner modules have separate twenty-second CTest budgets.
 
-## Fatal exceptions
+## Exceptions, emergency stacks and controlled recovery
 
-Use `fault brk`, `fault undef`, `fault unmapped` or `fault readonly` to exercise
+Use `fault brk`, `fault undef`, `fault unmapped`, `fault readonly` or `fault stack` to exercise
 exception diagnostics. Trailing
 spaces are accepted; missing, unknown, or extra arguments print
-`usage: fault brk|undef|unmapped|readonly` and return to the prompt. Accepted fault commands halt
+`usage: fault brk|undef|unmapped|readonly|stack` and return to the prompt. Accepted fault commands halt
 the kernel; press **Ctrl-C** to stop QEMU and start another run to continue.
 
 A breakpoint report begins with:
@@ -574,12 +576,36 @@ Deliberate triggers seed x0–x30 with distinct values so QEMU checks the actual
 capture, rather than merely recognizing a message. A nested exception during
 reporting halts without attempting another report.
 
-The stack guard restricts access; it does not provide an emergency stack or
-guarantee a report after stack corruption. Diagnostics require an intact stack and working polling UART, and become
-available after bootstrap UART initialization and the EL1 check. There is no
-emergency stack, exception recovery/return, stack-corruption guarantee, lower-EL
-execution, or recovery from fatal exceptions. Current-EL/SP_EL1 IRQs return through `ERET`;
-other exception paths halt. D/A/F remain masked, while foreground IRQs are enabled.
+Exception entry preserves scratch registers in a per-CPU context before touching
+SP, then switches to a dedicated 16 KiB stack with an unmapped 4 KiB guard.
+The image reserves eight guarded slots for later CPU startup. `TPIDR_EL1` holds
+the current context and `TPIDRRO_EL0` is reserved as entry scratch. The context
+and vector base are initialized before other boot checks. Returning IRQs restore
+the interrupted stack and complete integer state through `ERET`. D/A/F remain
+masked while foreground IRQs are enabled.
+
+`fault stack` deliberately points SP into the main stack's guard and writes there.
+Its complete report preserves that invalid original SP, the fault-site ELR,
+translation-abort FAR and every register sentinel. Reporting still requires an
+intact per-CPU context, emergency stack, mappings and working polling UART.
+A nested exception halts immediately; arbitrary memory corruption cannot be
+assumed recoverable.
+
+`recover brk` and `recover undef` arm one exact, trusted instruction site. The
+handler checks the vector, syndrome, EL1h state, saved flags and original SP,
+consumes the authorization, and resumes at the following instruction. The probe
+verifies x0–x30, NZCV, interrupt masks and SP, then returns to the monitor with
+`recover: brk OK count=1` or the corresponding undefined-instruction result.
+Trailing spaces are accepted; invalid arguments produce
+`usage: recover brk|undef`. Ordinary `fault` commands remain fatal.
+
+`kernel.recovery` exercises both recoveries repeatedly on A53 with one/four CPUs
+and A57 with one CPU, checks subsequent monitor/SGI/heap operation, then verifies
+that an unarmed breakpoint still halts. Separate A53/A57 processes verify bad-SP
+reports. All scenarios share one ten-second deadline. Host tests cover fixup
+rejection, register/state preservation and guarded-stack mappings; separately
+bounded fake processes cover incorrect context, fragmented/incomplete reports,
+closed input, exit, timeout, stderr and cleanup.
 
 ## Quality and dependencies
 
@@ -592,7 +618,7 @@ other exception paths halt. D/A/F remain masked, while foreground IRQs are enabl
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator, MMU, heap and UART IRQ coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ and recovery coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -601,7 +627,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 117 host tests per configuration and
-25 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 122 host tests per configuration and
+28 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.
