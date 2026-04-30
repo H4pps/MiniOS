@@ -362,7 +362,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n  uart         inspect receive interrupts and queue\r\n'
+HELP = b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly|stack  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n  uart         inspect receive interrupts and queue\r\n  recover brk|undef  test controlled exception recovery\r\n'
 
 
 def cpu_report_matcher(model, count):
@@ -417,9 +417,9 @@ def monitor_exchanges(model, count):
         (b" cpu  ", cpu_report_matcher(model, count)),
         (b"help x", b"\r\nusage: help\r\n" + PROMPT),
         (b"cpu x", b"\r\nusage: cpu\r\n" + PROMPT),
-        (b"fault", b"\r\nusage: fault brk|undef|unmapped|readonly\r\n" + PROMPT),
-        (b"fault BRK", b"\r\nusage: fault brk|undef|unmapped|readonly\r\n" + PROMPT),
-        (b"fault brk x", b"\r\nusage: fault brk|undef|unmapped|readonly\r\n" + PROMPT),
+        (b"fault", b"\r\nusage: fault brk|undef|unmapped|readonly|stack\r\n" + PROMPT),
+        (b"fault BRK", b"\r\nusage: fault brk|undef|unmapped|readonly|stack\r\n" + PROMPT),
+        (b"fault brk x", b"\r\nusage: fault brk|undef|unmapped|readonly|stack\r\n" + PROMPT),
         (b"CPU", b"\r\nmini-os: unknown command: CPU\r\n" + PROMPT),
         (b"unknown", b"\r\nmini-os: unknown command: unknown\r\n" + PROMPT),
         (b"", b"\r\n" + PROMPT),
@@ -463,7 +463,7 @@ def command_exchange(name, payload, response):
     yield name + " submission", b"\n", response
 
 
-def scenario_test(command, timeout, scenarios, exchanges):
+def scenario_test(command, timeout, scenarios, exchanges, allow_exception=False):
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("Serial deadline must be positive")
     deadline = time.monotonic() + timeout
@@ -477,7 +477,7 @@ def scenario_test(command, timeout, scenarios, exchanges):
         scenario = list(command)
         for flag, value in (("-cpu", model), ("-smp", str(count)), ("-m", f"{memory}M")):
             scenario[scenario.index(flag) + 1] = value
-        result = serial_test(scenario, remaining, exchanges(memory))
+        result = serial_test(scenario, remaining, exchanges(memory), allow_exception=allow_exception)
         output.extend(result.stdout); diagnostics.extend(result.stderr); last_pid = result.pid
         if not result.success:
             return BootResult(False, f"{name}: {result.reason}", bytes(output), bytes(diagnostics), last_pid)
@@ -668,14 +668,14 @@ def fault_report_matcher(kind, symbols):
             if not condition:
                 raise ValueError(f"Incorrect exception report: {detail}")
         require(len(lines) == 36, "length")
-        memory_fault = kind in ("unmapped","readonly")
+        memory_fault = kind in ("unmapped","readonly","stack")
         reason = "data-abort" if memory_fault else "brk" if kind == "brk" else "unknown"
         require(lines[0] == f"mini-os: exception vector=current-spx-sync reason={reason}".encode(), "vector or reason")
         if memory_fault:
-            dfsc = 6 if kind=="unmapped" else 15
-            esr = 0x96000000 | dfsc | (64 if kind=="readonly" else 0)
-            description = "translation" if kind=="unmapped" else "permission"
-            expected = f"esr=0x{esr:016x} ec=0x25 il=1 iss=0x{esr & 0x1ffffff:07x} abort={description} dfsc=0x{dfsc:02x} write={int(kind=='readonly')} far-valid=1"
+            dfsc = 6 if kind=="unmapped" else 7 if kind=="stack" else 15
+            esr = 0x96000000 | dfsc | (64 if kind in ("readonly","stack") else 0)
+            description = "permission" if kind=="readonly" else "translation"
+            expected = f"esr=0x{esr:016x} ec=0x25 il=1 iss=0x{esr & 0x1ffffff:07x} abort={description} dfsc=0x{dfsc:02x} write={int(kind in ('readonly','stack'))} far-valid=1"
         else:
             esr = 0xf2000123 if kind == "brk" else 0x02000000
             expected = f"esr=0x{esr:016x} ec=0x{esr >> 26:02x} il=1 iss=0x{esr & 0x1ffffff:07x}"
@@ -688,8 +688,9 @@ def fault_report_matcher(kind, symbols):
         stack = re.fullmatch(rb"sp=0x([0-9a-f]{16}) far\(raw\)=0x([0-9a-f]{16})", lines[3])
         require(stack is not None, "SP or raw FAR formatting")
         sp = int(stack[1], 16)
-        require(symbols["__stack_bottom"] + 304 <= sp <= symbols["__stack_top"] and sp % 16 == 0, "stack address")
-        target = 0x1000 if kind=="unmapped" else symbols.get("mini_os_readonly_probe",0)
+        if kind=="stack": require(sp==symbols["__stack_guard"]+2048,"corrupted stack address")
+        else: require(symbols["__stack_bottom"] + 304 <= sp <= symbols["__stack_top"] and sp % 16 == 0, "stack address")
+        target = 0x1000 if kind=="unmapped" else symbols["__stack_guard"]+2048 if kind=="stack" else symbols.get("mini_os_readonly_probe",0)
         if memory_fault: require(int(stack[2],16)==target, "fault address")
         for index in range(31):
             value = target if memory_fault and index==16 else 0x100+index
@@ -764,6 +765,33 @@ def mmu_test(command,timeout=10,symbols=None):
     return BootResult(faults.success,faults.reason,normal.stdout+faults.stdout,normal.stderr+faults.stderr,faults.pid)
 
 
+def recovery_exchanges(memory=128,symbols=None):
+    yield next(uart_exchanges(memory))
+    yield from command_exchange("recovery help",b"help",b"\r\n"+HELP+PROMPT)
+    for count,kind in enumerate(("brk","undef")*3,1):
+        yield from command_exchange("controlled exception recovery",f"recover {kind}  ".encode(),f"\r\nrecover: {kind} OK count={count}\r\n".encode()+PROMPT)
+    for payload in (b"recover",b"recover stack",b"recover brk x"):
+        yield from command_exchange("recovery usage",payload,b"\r\nusage: recover brk|undef\r\n"+PROMPT)
+    yield from command_exchange("IRQ after recovery",b"irq test",b"\r\nirq: test OK\r\n"+PROMPT)
+    yield from command_exchange("heap after recovery",b"heap test",b"\r\nheap: test OK\r\n"+PROMPT)
+    yield from command_exchange("console after recovery",b"echo resumed",b"\r\necho: resumed\r\n"+PROMPT)
+    # The same opcode at an unarmed site must still produce a terminal report.
+    steps=iter(fault_exchanges("brk",symbols));next(steps)
+    yield from steps
+
+
+def recovery_test(command,timeout=10,symbols=None):
+    if symbols is None:
+        symbols=inspect(Path(command[command.index("-kernel")+1]))
+    deadline=time.monotonic()+timeout
+    normal=scenario_test(command,timeout,CPU_SCENARIOS,lambda memory:recovery_exchanges(memory,symbols),allow_exception=True)
+    if not normal.success:return normal
+    remaining=deadline-time.monotonic()
+    if remaining<=0:return BootResult(False,"Timed out before emergency stack tests",normal.stdout,normal.stderr,normal.pid)
+    stack=fault_test(command,remaining,symbols,kinds=("stack",))
+    return BootResult(stack.success,stack.reason,normal.stdout+stack.stdout,normal.stderr+stack.stderr,stack.pid)
+
+
 def qemu_command(image, executable):
     if not image.is_file():
         raise RuntimeError(f"Missing kernel image: {image}; run kernel-build first.")
@@ -775,7 +803,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -789,7 +817,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:

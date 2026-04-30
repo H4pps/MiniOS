@@ -86,7 +86,14 @@ def inspect(image, verbose=True):
     require(symbols["__stack_top"]%4096==symbols["__image_end"]%4096==0, "Image and stack must end on page boundaries")
     require(any(low<=symbols["__rodata_start"]<symbols["__rodata_end"]<=high and flags==4 for low,high,flags in loads), "Readonly data permissions are invalid")
     require(symbols.get("mini_os_readonly_probe",0)>=symbols["__rodata_start"] and symbols.get("mini_os_readonly_probe",0)+8<=symbols["__rodata_end"], "Missing readonly fault target")
-    for kind in ("brk", "undef", "unmapped", "readonly"):
+    require("__exception_stacks_start" in symbols and "__exception_stacks_end" in symbols, "Missing emergency stack layout")
+    first,last=symbols["__exception_stacks_start"],symbols["__exception_stacks_end"]
+    require(first%4096==0 and first>=symbols["__stack_top"] and last-first==8*20*1024 and last<=symbols["__image_end"], "Invalid guarded emergency stacks")
+    require(any(low<=first<last<=high and flags==6 for low,high,flags in loads), "Emergency stacks are not writable RAM")
+    for kind in ("brk", "undef"):
+        site=symbols.get(f"mini_os_recovery_{kind}_site",0);resume=symbols.get(f"mini_os_recovery_{kind}_resume",0)
+        require(site%4==0 and resume==site+4 and any(low<=site<resume<high and flags==5 for low,high,flags in loads), "Invalid scoped recovery site")
+    for kind in ("brk", "undef", "unmapped", "readonly", "stack"):
         site = symbols.get(f"mini_os_fault_{kind}_site")
         require(site is not None and site % 4 == 0 and any(low <= site < high and flags == 5 for low, high, flags in loads), "Missing or invalid fault site")
     if verbose:
