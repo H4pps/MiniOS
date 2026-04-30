@@ -8,6 +8,7 @@
 #include "mini_os/mmu.h"
 #include "mini_os/monitor.h"
 #include "mini_os/platform.h"
+#include "mini_os/recovery.h"
 #include "mini_os/serial_queue.h"
 #include "mini_os/timer.h"
 
@@ -45,7 +46,18 @@ namespace kernel {
             platform::early_putc('\n');
             {
                 const auto command = parse_command({editor.text(), editor.length()});
-                if (command.kind == CommandKind::uart) {
+                if (command.kind == CommandKind::recover_brk ||
+                    command.kind == CommandKind::recover_undef) {
+                    const bool brk = command.kind == CommandKind::recover_brk;
+                    const bool valid = arch::recovery_self_test(
+                        brk ? arch::FaultKind::breakpoint : arch::FaultKind::undefined_instruction);
+                    writer.write(brk ? "recover: brk " : "recover: undef ");
+                    writer.write(valid ? "OK count=" : "FAIL count=");
+                    writer.decimal(arch::recovered_exceptions());
+                    writer.put('\n');
+                } else if (command.kind == CommandKind::fault_stack) {
+                    arch::trigger_fault(arch::FaultKind::stack);
+                } else if (command.kind == CommandKind::uart) {
                     serial::render_uart(writer, platform::uart_stats());
                 } else if (command.kind == CommandKind::cpu) {
                     render_cpu(writer, platform::cpu_inventory(), arch::read_cpu_snapshot());

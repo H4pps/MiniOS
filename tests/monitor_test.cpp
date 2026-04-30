@@ -33,11 +33,13 @@ TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
     EXPECT_EQ(
         response("help  "),
         "commands:\n  help         show commands\n  cpu          show CPU inventory and boot "
-        "registers\n  echo [text]  echo text\n  fault brk|undef|unmapped|readonly  trigger a fatal "
+        "registers\n  echo [text]  echo text\n  fault brk|undef|unmapped|readonly|stack  trigger a "
+        "fatal "
         "exception\n  irq [test]   inspect or test interrupts\n  timer        inspect timer "
         "counters\n  mem [test|reclaim]  inspect, test or reclaim physical pages\n  mmu          "
         "inspect mappings and protection\n  heap [test]  inspect or test heap allocation\n  uart   "
-        "      inspect receive interrupts and queue\n");
+        "      inspect receive interrupts and queue\n  recover brk|undef  test controlled "
+        "exception recovery\n");
     EXPECT_EQ(response("help x"), "usage: help\n");
     EXPECT_EQ(response("cpu x"), "usage: cpu\n");
     EXPECT_EQ(response("CPU x"), "mini-os: unknown command: CPU\n");
@@ -116,7 +118,7 @@ TEST(Monitor, FaultCommandsRequireExactlyOneKnownArgument) {
     EXPECT_EQ(response("fault brk"), ""); // Hardware execution belongs to the console adapter.
     for (const auto *line : {"fault", "fault  ", "fault BRK", "fault unknown", "fault brk x",
                              "fault undef brk", "fault brk;echo"}) {
-        EXPECT_EQ(response(line), "usage: fault brk|undef|unmapped|readonly\n") << line;
+        EXPECT_EQ(response(line), "usage: fault brk|undef|unmapped|readonly|stack\n") << line;
     }
     EXPECT_EQ(response("Fault brk"), "mini-os: unknown command: Fault\n");
 }

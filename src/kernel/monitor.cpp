@@ -55,6 +55,13 @@ Command parse_command(TextSpan line) {
                                                                           : CommandKind::irq_test)
                        : memory && argument.equals("reclaim") ? CommandKind::mem_reclaim
                                                               : CommandKind::usage;
+    } else if (command.name.equals("recover")) {
+        auto argument = command.arguments;
+        while (argument.size != 0 && argument.data[argument.size - 1] == ' ')
+            --argument.size;
+        command.kind = argument.equals("brk")     ? CommandKind::recover_brk
+                       : argument.equals("undef") ? CommandKind::recover_undef
+                                                  : CommandKind::usage;
     } else if (command.name.equals("fault")) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
@@ -63,6 +70,7 @@ Command parse_command(TextSpan line) {
         command.kind = argument.equals("brk")        ? CommandKind::fault_brk
                        : argument.equals("undef")    ? CommandKind::fault_undef
                        : argument.equals("unmapped") ? CommandKind::fault_unmapped
+                       : argument.equals("stack")    ? CommandKind::fault_stack
                        : argument.equals("readonly") ? CommandKind::fault_readonly
                                                      : CommandKind::usage;
     } else {
@@ -78,6 +86,9 @@ Command parse_command(TextSpan line) {
 }
 void render_text_command(TextWriter &writer, const Command &command) {
     switch (command.kind) {
+    case CommandKind::recover_brk:
+    case CommandKind::recover_undef:
+    case CommandKind::fault_stack:
     case CommandKind::empty:
     case CommandKind::mmu:
     case CommandKind::fault_unmapped:
@@ -98,11 +109,13 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::help:
         writer.write(
             "commands:\n  help         show commands\n  cpu          show CPU inventory and boot "
-            "registers\n  echo [text]  echo text\n  fault brk|undef|unmapped|readonly  trigger a "
+            "registers\n  echo [text]  echo text\n  fault brk|undef|unmapped|readonly|stack  "
+            "trigger a "
             "fatal exception\n  irq [test]   inspect or test interrupts\n  timer        inspect "
             "timer counters\n  mem [test|reclaim]  inspect, test or reclaim physical pages\n  mmu  "
             "        inspect mappings and protection\n  heap [test]  inspect or test heap "
-            "allocation\n  uart         inspect receive interrupts and queue\n");
+            "allocation\n  uart         inspect receive interrupts and queue\n  recover brk|undef  "
+            "test controlled exception recovery\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");
@@ -121,8 +134,10 @@ void render_text_command(TextWriter &writer, const Command &command) {
              command.name.equals("heap"))) {
             writer.write(command.name.equals("mem") ? " [test|reclaim]" : " [test]");
         }
+        if (command.name.equals("recover"))
+            writer.write(" brk|undef");
         if (command.name.equals("fault")) {
-            writer.write(" brk|undef|unmapped|readonly");
+            writer.write(" brk|undef|unmapped|readonly|stack");
         }
         writer.put('\n');
         return;
