@@ -54,6 +54,7 @@ bool install_exception_vectors() {
     asm volatile("mrs %0, VBAR_EL1" : "=r"(installed));
     return installed == address;
 }
+uint64_t exception_stack_address() { return context().stack_top; }
 uint64_t recovered_exceptions() {
     const auto flags = mask_irq();
     const auto value = context().recovered;

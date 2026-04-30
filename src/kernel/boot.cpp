@@ -6,6 +6,7 @@
 #include "mini_os/interrupt.h"
 #include "mini_os/memory.h"
 #include "mini_os/mmu.h"
+#include "mini_os/performance.h"
 #include "mini_os/platform.h"
 #include "mini_os/serial_queue.h"
 #include "mini_os/timer.h"
@@ -35,6 +36,7 @@ extern "C" [[noreturn]] void kernel_entry() {
     if (!arch::install_exception_vectors()) {
         fail("exception vector installation");
     }
+    platform::initialize_diagnostics();
     if (initialized_probe != 0x123456789abcdef0) {
         fail("initialized data");
     }

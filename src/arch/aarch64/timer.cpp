@@ -10,6 +10,11 @@ uint64_t physical_counter() {
     asm volatile("isb\n\tmrs %0, CNTPCT_EL0" : "=r"(value) : : "memory");
     return value;
 }
+uint64_t measurement_counter() {
+    uint64_t value = 0;
+    asm volatile("dsb sy\n\tisb\n\tmrs %0, CNTPCT_EL0\n\tisb" : "=r"(value) : : "memory");
+    return value;
+}
 void set_timer_deadline(uint64_t value) {
     asm volatile("msr CNTP_CVAL_EL0, %0\n\tisb" : : "r"(value) : "memory");
 }

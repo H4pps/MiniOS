@@ -16,6 +16,7 @@ add_executable(mini_os_kernel
   src/platform/qemu_virt/timer.cpp
   src/platform/qemu_virt/memory.cpp
   src/platform/qemu_virt/heap.cpp
+  src/platform/qemu_virt/performance.cpp
   src/arch/aarch64/mmu.cpp
   src/platform/qemu_virt/mmu.cpp
   src/arch/aarch64/irq.cpp

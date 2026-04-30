@@ -28,5 +28,6 @@ uint64_t emergency_stack_top(ExceptionStacks stacks, size_t slot);
 bool initialize_exception_cpu(size_t slot);
 bool recovery_self_test(FaultKind kind);
 uint64_t recovered_exceptions();
+uint64_t exception_stack_address();
 } // namespace arch
 #endif

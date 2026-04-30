@@ -33,6 +33,7 @@ uint64_t cpu_affinity(uint64_t mpidr);
 uint32_t current_exception_level();
 uint64_t counter_frequency();
 uint64_t physical_counter();
+uint64_t measurement_counter();
 void set_timer_deadline(uint64_t value);
 void set_timer_enabled(bool enabled);
 uint64_t mask_irq();
