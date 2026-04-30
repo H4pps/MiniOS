@@ -34,6 +34,8 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::cpu;
     } else if (command.name.equals("mmu")) {
         command.kind = CommandKind::mmu;
+    } else if (command.name.equals("diag")) {
+        command.kind = CommandKind::diag;
     } else if (command.name.equals("uart")) {
         command.kind = CommandKind::uart;
     } else if (command.name.equals("timer")) {
@@ -41,20 +43,27 @@ Command parse_command(TextSpan line) {
     } else if (command.name.equals("echo")) {
         command.kind = CommandKind::echo;
     } else if ((command.name.equals("irq") || command.name.equals("mem") ||
-                command.name.equals("heap"))) {
+                command.name.equals("heap") || command.name.equals("perf"))) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
             --argument.size;
         }
-        const bool heap = command.name.equals("heap"), memory = command.name.equals("mem");
-        command.kind = argument.size == 0                     ? (heap     ? CommandKind::heap
-                                                                 : memory ? CommandKind::mem
-                                                                          : CommandKind::irq)
-                       : argument.equals("test")              ? (heap     ? CommandKind::heap_test
-                                                                 : memory ? CommandKind::mem_test
-                                                                          : CommandKind::irq_test)
-                       : memory && argument.equals("reclaim") ? CommandKind::mem_reclaim
-                                                              : CommandKind::usage;
+        const bool heap = command.name.equals("heap"), memory = command.name.equals("mem"),
+                   perf = command.name.equals("perf");
+        if (argument.size == 0)
+            command.kind = heap     ? CommandKind::heap
+                           : memory ? CommandKind::mem
+                           : perf   ? CommandKind::perf
+                                    : CommandKind::irq;
+        else if (argument.equals("test"))
+            command.kind = heap     ? CommandKind::heap_test
+                           : memory ? CommandKind::mem_test
+                           : perf   ? CommandKind::perf_test
+                                    : CommandKind::irq_test;
+        else if (memory && argument.equals("reclaim"))
+            command.kind = CommandKind::mem_reclaim;
+        else
+            command.kind = CommandKind::usage;
     } else if (command.name.equals("recover")) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ')
@@ -77,8 +86,8 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::unknown;
     }
     if ((command.kind == CommandKind::help || command.kind == CommandKind::cpu ||
-         command.kind == CommandKind::timer || command.kind == CommandKind::uart ||
-         command.kind == CommandKind::mmu) &&
+         command.kind == CommandKind::diag || command.kind == CommandKind::timer ||
+         command.kind == CommandKind::uart || command.kind == CommandKind::mmu) &&
         command.arguments.size != 0) {
         command.kind = CommandKind::usage;
     }
@@ -89,6 +98,9 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::recover_brk:
     case CommandKind::recover_undef:
     case CommandKind::fault_stack:
+    case CommandKind::diag:
+    case CommandKind::perf:
+    case CommandKind::perf_test:
     case CommandKind::empty:
     case CommandKind::mmu:
     case CommandKind::fault_unmapped:
@@ -115,7 +127,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
             "timer counters\n  mem [test|reclaim]  inspect, test or reclaim physical pages\n  mmu  "
             "        inspect mappings and protection\n  heap [test]  inspect or test heap "
             "allocation\n  uart         inspect receive interrupts and queue\n  recover brk|undef  "
-            "test controlled exception recovery\n");
+            "test controlled exception recovery\n  diag         show coherent kernel diagnostics\n "
+            " perf [test]  measure a bounded memory workload\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");
@@ -131,7 +144,7 @@ void render_text_command(TextWriter &writer, const Command &command) {
         writer.write("usage: ");
         writer.write(command.name);
         if ((command.name.equals("irq") || command.name.equals("mem") ||
-             command.name.equals("heap"))) {
+             command.name.equals("heap") || command.name.equals("perf"))) {
             writer.write(command.name.equals("mem") ? " [test|reclaim]" : " [test]");
         }
         if (command.name.equals("recover"))
