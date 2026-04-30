@@ -35,7 +35,7 @@ while True:
     if command in (b'cpu', b'help') and arguments:
         response += b'usage: ' + command + b'\r\n'
     elif command == b'cpu': response += report.encode()
-    elif command == b'help': response += b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly|stack  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n  uart         inspect receive interrupts and queue\r\n  recover brk|undef  test controlled exception recovery\r\n'
+    elif command == b'help': response += b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly|stack  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n  uart         inspect receive interrupts and queue\r\n  recover brk|undef  test controlled exception recovery\r\n  diag         show coherent kernel diagnostics\r\n  perf [test]  measure a bounded memory workload\r\n'
     elif command == b'fault': response += b'usage: fault brk|undef|unmapped|readonly|stack\r\n'
     elif command == b'echo': response += b'echo: ' + arguments + b'\r\n'
     elif command: response += b'mini-os: unknown command: ' + command + b'\r\n'

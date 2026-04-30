@@ -362,7 +362,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly|stack  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n  uart         inspect receive interrupts and queue\r\n  recover brk|undef  test controlled exception recovery\r\n'
+HELP = b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly|stack  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n  uart         inspect receive interrupts and queue\r\n  recover brk|undef  test controlled exception recovery\r\n  diag         show coherent kernel diagnostics\r\n  perf [test]  measure a bounded memory workload\r\n'
 
 
 def cpu_report_matcher(model, count):
@@ -792,6 +792,53 @@ def recovery_test(command,timeout=10,symbols=None):
     return BootResult(stack.success,stack.reason,normal.stdout+stack.stdout,normal.stderr+stack.stderr,stack.pid)
 
 
+def performance_exchanges(memory=128,symbols=None):
+    yield next(uart_exchanges(memory))
+    diag=[];measurements=[];recoveries=[0];require_tick_progress=[False]
+    def diagnostics(data):
+        if not data.endswith(b"\r\n"+PROMPT):return None
+        match=re.fullmatch(rb"\r\ndiag: el=1 mmu=on caches=off irq=on uptime-us=(\d+) timer-ticks=(\d+) missed=(\d+) recoveries=(\d+) uart-dropped=0 pages-free=(\d+) heap-free=262112 exception-stack=0x([0-9a-f]{16})\r\nmini-os> ",data)
+        if match is None:raise ValueError("Incorrect kernel diagnostic report")
+        uptime,ticks,missed,recovered,free=map(int,match.groups()[:5]);stack=int(match[6],16)
+        if uptime==0 or recovered!=recoveries[0] or not 0<free<memory*256 or stack!=symbols["__exception_stacks_start"]+20*1024:
+            raise ValueError("Incorrect diagnostic state, recovery count or emergency stack")
+        if diag and (uptime<=diag[-1][0] or ticks<diag[-1][1] or missed<diag[-1][2] or free!=diag[-1][3]):
+            raise ValueError("Diagnostic progress or page accounting failed")
+        if diag and require_tick_progress[0] and ticks<=diag[-1][1]:raise ValueError("Timer delivery did not progress during workload exchanges")
+        require_tick_progress[0]=False
+        diag.append((uptime,ticks,missed,free));return len(data)
+    def performance(data):
+        if not data.endswith(b"\r\n"+PROMPT):return None
+        match=re.fullmatch(rb"\r\nperf: state=OK pages=8 bytes=4194304 counter-ticks=(\d+) microseconds=(\d+) timer-ticks=(\d+)\r\nmini-os> ",data)
+        if match is None:raise ValueError("Incorrect performance workload report")
+        counts,microseconds,ticks=map(int,match.groups())
+        if counts==0 or microseconds==0 or microseconds!=counts*1000000//62500000:
+            raise ValueError("Incorrect performance counter conversion")
+        measurements.append(data);return len(data)
+    yield from command_exchange("initial diagnostics",b"diag",diagnostics)
+    yield from command_exchange("unmeasured performance",b"perf",b"\r\nperf: state=not-run\r\n"+PROMPT)
+    for round in range(3):
+        yield from command_exchange("bounded workload",b"perf test  ",performance)
+        yield from command_exchange("retained performance",b"perf",measurements[-1])
+        yield "measurement progress",b"",serial_pause(.03)
+        require_tick_progress[0]=True
+        yield from command_exchange("restored page accounting",b"diag",diagnostics)
+    recoveries[0]=1
+    yield from command_exchange("diagnostic recovery",b"recover brk",b"\r\nrecover: brk OK count=1\r\n"+PROMPT)
+    yield from command_exchange("recovery accounting",b"diag",diagnostics)
+    for payload,response in ((b"diag x",b"usage: diag"),(b"perf x",b"usage: perf [test]"),(b"perf test extra",b"usage: perf [test]")):
+        yield from command_exchange("diagnostic usage",payload,b"\r\n"+response+b"\r\n"+PROMPT)
+    yield from command_exchange("IRQ after workload",b"irq test",b"\r\nirq: test OK\r\n"+PROMPT)
+    yield from command_exchange("heap after workload",b"heap test",b"\r\nheap: test OK\r\n"+PROMPT)
+    yield from command_exchange("console after workload",b"echo measured",b"\r\necho: measured\r\n"+PROMPT)
+
+
+def performance_test(command,timeout=10,symbols=None):
+    if symbols is None:symbols=inspect(Path(command[command.index("-kernel")+1]))
+    scenarios=tuple((model,count,memory) for model,count,_ in CPU_SCENARIOS for memory in (128,256))
+    return scenario_test(command,timeout,scenarios,lambda memory:performance_exchanges(memory,symbols))
+
+
 def qemu_command(image, executable):
     if not image.is_file():
         raise RuntimeError(f"Missing kernel image: {image}; run kernel-build first.")
@@ -803,7 +850,7 @@ def qemu_command(image, executable):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -817,7 +864,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
