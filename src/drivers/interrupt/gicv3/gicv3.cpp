@@ -33,8 +33,8 @@ const Io &memory_io() {
     static constexpr Io io{nullptr, read32, read64, write32, write64};
     return io;
 }
-const char *initialize(const Resources &resources, uint64_t affinity, State &state, const Io &io,
-                       unsigned poll_budget) {
+namespace {
+const char *locate(const Resources &resources, uint64_t affinity, State &state, const Io &io) {
     state.io = nullptr;
     if (!io.read32 || !io.read64 || !io.write32 || !io.write64 || resources.distributor == 0 ||
         resources.redistributors == 0 || resources.distributor % 0x10000 != 0 ||
@@ -84,17 +84,10 @@ const char *initialize(const Resources &resources, uint64_t affinity, State &sta
     if (state.limit > 1020) {
         state.limit = 1020;
     }
-    io.write32(io.context, dist, 0x40);
-    if (!wait_clear(io, dist, 1U << 31, {poll_budget})) {
-        return "gic distributor timeout";
-    }
-    for (uint32_t word = 1; word < (state.limit + 31) / 32; ++word) {
-        io.write32(io.context, dist + 0x180 + static_cast<uintptr_t>(word) * 4U, UINT32_MAX);
-        io.write32(io.context, dist + 0x280 + static_cast<uintptr_t>(word) * 4U, UINT32_MAX);
-        io.write32(io.context, dist + 0x380 + static_cast<uintptr_t>(word) * 4U, UINT32_MAX);
-        io.write32(io.context, dist + 0x80 + static_cast<uintptr_t>(word) * 4U, UINT32_MAX);
-    }
-    const auto red = selected;
+    return nullptr;
+}
+const char *wake(const State &state, const Io &io, unsigned poll_budget) {
+    const auto red = state.redistributor;
     io.write32(io.context, red + 0x14, io.read32(io.context, red + 0x14) & ~2U);
     if (!wait_clear(io, red + 0x14, 4, {poll_budget})) {
         return "gic redistributor wake timeout";
@@ -106,6 +99,37 @@ const char *initialize(const Resources &resources, uint64_t affinity, State &sta
     if (!wait_clear(io, red, 8, {poll_budget})) {
         return "gic redistributor timeout";
     }
+    return nullptr;
+}
+} // namespace
+const char *initialize_local(const Resources &resources, uint64_t affinity, State &state,
+                             const Io &io, unsigned poll_budget) {
+    if (const auto *error = locate(resources, affinity, state, io))
+        return error;
+    if ((io.read32(io.context, state.distributor) & 0x52U) != 0x52U)
+        return "gic distributor is not enabled";
+    if (const auto *error = wake(state, io, poll_budget))
+        return error;
+    state.io = &io;
+    return nullptr;
+}
+const char *initialize(const Resources &resources, uint64_t affinity, State &state, const Io &io,
+                       unsigned poll_budget) {
+    if (const auto *error = locate(resources, affinity, state, io))
+        return error;
+    const auto dist = state.distributor;
+    io.write32(io.context, dist, 0x40);
+    if (!wait_clear(io, dist, 1U << 31, {poll_budget})) {
+        return "gic distributor timeout";
+    }
+    for (uint32_t word = 1; word < (state.limit + 31) / 32; ++word) {
+        io.write32(io.context, dist + 0x180 + static_cast<uintptr_t>(word) * 4U, UINT32_MAX);
+        io.write32(io.context, dist + 0x280 + static_cast<uintptr_t>(word) * 4U, UINT32_MAX);
+        io.write32(io.context, dist + 0x380 + static_cast<uintptr_t>(word) * 4U, UINT32_MAX);
+        io.write32(io.context, dist + 0x80 + static_cast<uintptr_t>(word) * 4U, UINT32_MAX);
+    }
+    if (const auto *error = wake(state, io, poll_budget))
+        return error;
     io.write32(io.context, dist, 0x52); // DS, affinity routing, Group 1.
     if (!wait_clear(io, dist, 1U << 31, {poll_budget})) {
         return "gic distributor enable timeout";

@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 namespace drivers::gicv3 {
+constexpr bool is_spurious(uint32_t id) { return id >= 1020 && id <= 1023; }
 struct Io {
     void *context;
     uint32_t (*read32)(void *, uintptr_t);
@@ -23,6 +24,9 @@ struct State {
 const Io &memory_io();
 const char *initialize(const Resources &resources, uint64_t affinity, State &state,
                        const Io &io = memory_io(), unsigned poll_budget = 100000);
+// Configure only this CPU's redistributor; preserve global distributor state.
+const char *initialize_local(const Resources &resources, uint64_t affinity, State &state,
+                             const Io &io = memory_io(), unsigned poll_budget = 100000);
 bool configure(State &state, uint32_t id, bool edge);
 bool enable(State &state, uint32_t id, bool enabled);
 } // namespace drivers::gicv3

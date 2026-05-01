@@ -177,3 +177,33 @@ TEST(IrqDispatch, RegistrationSpuriousAndUnknownInterrupts) {
     EXPECT_EQ(table.dispatch(99), kernel::IrqResult::unhandled);
     EXPECT_EQ(table.dispatch(UINT32_MAX), kernel::IrqResult::unhandled);
 }
+
+TEST_F(GicRegisters, LocalInitializationPreservesDistributorAndOtherCpuSources) {
+    values[dist] = 0x52;
+    values[dist + 0x104] = 0x1234;
+    values[red + 0x10100] = 0x80;
+    ASSERT_EQ(drivers::gicv3::initialize_local(resources, 5, state, io, 8), nullptr);
+    EXPECT_EQ(values[dist], 0x52U);
+    EXPECT_EQ(values[dist + 0x104], 0x1234U);
+    EXPECT_EQ(values[red + 0x10100], 0x80U);
+    for (const auto &[address, value] : writes) {
+        (void)value;
+        EXPECT_GE(address, red + 0x20000);
+        EXPECT_LT(address, red + 0x40000);
+    }
+    ASSERT_TRUE(drivers::gicv3::configure(state, 1, true));
+    ASSERT_TRUE(drivers::gicv3::enable(state, 1, true));
+    EXPECT_EQ(writes[red + 0x30100], 2U);
+}
+TEST_F(GicRegisters, LocalInitializationRejectsMissingGlobalSetupAndBoundsReadiness) {
+    EXPECT_NE(drivers::gicv3::initialize_local(resources, 5, state, io, 8), nullptr);
+    values[dist] = 0x52;
+    stuck_address = red + 0x20014;
+    stuck_mask = 4;
+    EXPECT_NE(drivers::gicv3::initialize_local(resources, 5, state, io, 8), nullptr);
+    EXPECT_EQ(state.io, nullptr);
+    for (const auto &[address, value] : writes) {
+        (void)value;
+        EXPECT_GE(address, red + 0x20000);
+    }
+}
