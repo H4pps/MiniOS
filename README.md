@@ -225,6 +225,8 @@ lowercase and case-sensitive:
 | --- | --- |
 | `help` | List commands, including deliberate fault triggers |
 | `cpu` | Report DT CPU inventory and the boot CPU's current identity and state |
+| `topology` | Show DT socket/cluster/core/thread locations without inferring missing hierarchy |
+| `features` | Decode boot CPU feature registers and retain their raw encodings |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
 | `mmu` | Inspect translation registers, identity mappings, and permission probes |
 | `mem [test\|reclaim]` | Inspect/test physical pages or reclaim reusable reservations |
@@ -292,8 +294,7 @@ platform converts newlines to CRLF.
 The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
 for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
-CPU hierarchy discovery, secondary CPU startup,
-EL2/EL3 transitions,
+Secondary CPU startup, EL2/EL3 transitions,
 and scheduling remain later milestones.
 
 Interactive execution and tests share this fixed emulator configuration:
@@ -347,9 +348,41 @@ CPU's registers are sampled: MIDR_EL1, MPIDR_EL1, CurrentEL, DAIF, and SCTLR_EL1
 The report shows implementer/part/variant/revision, Aff3–Aff0, EL, interrupt masks,
 and MMU/cache enable state. Cortex-A53/A57 names come from the hardware identity;
 unknown identities still show raw fields. Registers are read without changing
-configuration or starting secondary CPUs. `cpu-map`, shared-cache topology,
-PSCI startup, and feature-register decoding remain deferred. Hex output is
+configuration or starting secondary CPUs. Shared-cache discovery and PSCI startup
+remain deferred. Hex output is
 lowercase and fixed-width; counts and decoded components are decimal.
+
+`topology` follows the [CPU topology binding](https://raw.githubusercontent.com/devicetree-org/dt-schema/main/dtschema/schemas/cpu-map.yaml).
+An optional `/cpus/cpu-map` describes sockets, nested clusters, cores and threads.
+Every validated CPU node, including disabled CPUs, must have one unambiguous
+phandle reference. Sibling indices must be unique and sequential from zero;
+mixed child roles, malformed properties, duplicate references and missing CPUs
+fail startup before console handover. Nesting stays within the FDT depth limit.
+An absent map is usable and reports `described=no`; absent indices show `-`.
+Records follow the inventory's affinity order; nested cluster paths use `/`.
+For example, the default QEMU tree reports:
+
+```text
+topology: described=yes cpus=1 sockets=1 clusters=1 cores=1 threads=0
+topology[0]: affinity=0x0000000000000000 socket=0 cluster=0 core=0 thread=- dt-status=enabled
+```
+
+`features` reads ID_AA64PFR0/ISAR0/ISAR1/MMFR0/MMFR1/DFR0_EL1 on the boot CPU.
+It reports execution levels, FP/SIMD, GIC, crypto/checksum/atomic instructions,
+address widths, granules, PAN, hardware access flags, speculation barriers and
+debug resources. Decoding uses the [Arm64 register field definitions](https://raw.githubusercontent.com/torvalds/linux/master/arch/arm64/tools/sysreg).
+Every decoded field retains its raw nibble, and unrecognized values remain
+`unknown`; inspecting a capability does not enable it. Kernel compilation still
+uses general registers only. Both commands accept trailing spaces and reject
+arguments with their corresponding usage line.
+
+`kernel.cpu_discovery` checks exact topology and raw/decoded feature reports,
+repeated commands, usage recovery and a subsequent self-SGI. It runs A53 with
+one/four/eight CPUs and A57 with one/four within one ten-second deadline.
+Host fixtures cover nested hierarchy, threads, disabled CPUs, missing maps,
+capacity, ambiguous references, malformed names and feature encoding boundaries.
+Separate fake-process tests verify fragmented reports, wrong fields/counts,
+closed input, premature exit, stderr draining, timeouts and process cleanup.
 
 The boot runner requires the exact resource confirmation followed by the exact
 complete boot success line on serial stdout within 10 seconds. Failure markers,
@@ -654,7 +687,7 @@ counters, partial output, stdin/exit failures, deadlines, diagnostics and cleanu
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery and performance coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance and CPU-discovery coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -663,7 +696,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 127 host tests per configuration and
-30 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 140 host tests per configuration and
+32 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.
