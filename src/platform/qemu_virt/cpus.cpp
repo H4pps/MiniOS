@@ -58,6 +58,7 @@ Error first_compatible(fdt::Bytes bytes, fdt::String &first) {
     return Error::none;
 }
 void copy_record(platform::CpuRecord &destination, const platform::CpuRecord &source) {
+    destination.node = source.node;
     destination.affinity = source.affinity;
     destination.enabled = source.enabled;
     destination.compatible.data = source.compatible.data;
@@ -153,6 +154,7 @@ CpuDiscoveryError discover_cpus(const fdt::View &view, uint64_t boot_affinity,
             return CpuDiscoveryError::capacity_exceeded;
         }
         CpuRecord record;
+        record.node = event.node;
         Error lookup = view.property(event.node, "reg", bytes);
         if (lookup != Error::none) {
             return lookup_error(lookup);

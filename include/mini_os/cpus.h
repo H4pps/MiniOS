@@ -8,6 +8,7 @@ struct CpuRecord {
     uint64_t affinity;
     bool enabled;           // DT availability, not online state.
     fdt::String compatible; // Borrowed from the persistent DTB.
+    fdt::Node node = fdt::invalid_node;
 };
 struct CpuInventory {
     size_t count = 0;
