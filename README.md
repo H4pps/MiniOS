@@ -172,7 +172,7 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, MMU, heap, UART IRQ, and recovery tests |
+| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, MMU, heap, UART IRQ, recovery, and performance tests |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -230,6 +230,8 @@ lowercase and case-sensitive:
 | `mem [test\|reclaim]` | Inspect/test physical pages or reclaim reusable reservations |
 | `heap [test]` | Inspect the heap or verify allocation, fragmentation and coalescing |
 | `uart` | Report receive IRQ, input queue, error/drop, and idle-wait counters |
+| `diag` | Show a coherent kernel-state and resource snapshot |
+| `perf [test]` | Show the last measurement or verify and time a bounded memory workload |
 | `timer` | Report physical timer frequency, interval, counter, ticks, and missed periods |
 | `irq [test]` | Inspect GIC/IRQ counters or test a self-interrupt and context restoration |
 | `fault brk` | Trigger a breakpoint, report CPU context, and halt |
@@ -607,6 +609,40 @@ rejection, register/state preservation and guarded-stack mappings; separately
 bounded fake processes cover incorrect context, fragmented/incomplete reports,
 closed input, exit, timeout, stderr and cleanup.
 
+## Diagnostics and memory measurements
+
+`diag` snapshots EL, MMU/cache/IRQ state, uptime, delivered/missed timer periods,
+controlled recoveries, UART drops, free physical pages and heap payload, and the
+current emergency-stack address. It briefly masks IRQs for a coherent snapshot,
+then restores the foreground state before rendering. Uptime starts after vector
+installation. Invalid arguments produce `usage: diag`.
+
+`perf` initially reports `perf: state=not-run`. `perf test` allocates eight pages,
+performs 64 verified write/read passes (4 MiB of total memory traffic), releases
+them and checks restored page accounting. IRQs remain enabled throughout the
+workload. It reports system-counter ticks, elapsed microseconds and timer IRQs
+between the snapshots. A later `perf` displays the same retained result. Invalid
+arguments produce `usage: perf [test]`.
+
+Measurements use ordered `CNTPCT_EL0` reads with memory-completion barriers and
+`CNTFRQ_EL0` from the validated timer configuration. Conversion floors fractional
+microseconds, rejects invalid frequency/order and saturates on overflow. The
+counts measure elapsed time, including interrupt/emulator delays; they are not
+CPU cycles or a hardware throughput score. Values depend on host load and
+emulation. For example, a verified run reported:
+
+```text
+perf: state=OK pages=8 bytes=4194304 counter-ticks=391313 microseconds=6261 timer-ticks=0
+```
+
+`kernel.performance` repeats workloads on A53 with one/four CPUs and A57 with one
+CPU, each with 128/256 MiB RAM, within one ten-second deadline. It verifies time
+conversion, retained results, coherent recovery/stack state, stable free-page
+accounting, timer progress, subsequent SGI/heap commands and prompt recovery.
+Host sanitizer tests cover frequency/order boundaries, wraparound, overflow,
+formatting and parsing. Fake processes check wrong state/accounting, stalled
+counters, partial output, stdin/exit failures, deadlines, diagnostics and cleanup.
+
 ## Quality and dependencies
 
 - Strict warnings and warnings as errors apply to project targets.
@@ -618,7 +654,7 @@ closed input, exit, timeout, stderr and cleanup.
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ and recovery coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery and performance coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -627,7 +663,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 122 host tests per configuration and
-28 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 127 host tests per configuration and
+30 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.
