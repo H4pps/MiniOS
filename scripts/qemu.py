@@ -848,9 +848,68 @@ def qemu_command(image, executable):
     return [resolved, *QEMU_ARGS, "-kernel", str(image.resolve())]
 
 
+
+def topology_report(count):
+    lines = [f"topology: described=yes cpus={count} sockets=1 clusters=1 cores={count} threads=0"]
+    lines.extend(f"topology[{i}]: affinity=0x{i:016x} socket=0 cluster=0 core={i} thread=- dt-status=enabled" for i in range(count))
+    return b"\r\n" + "\r\n".join(lines).encode() + b"\r\n" + PROMPT
+
+
+def feature_report(model):
+    """Fixed model expectations include raw ID fields and their decoded meanings."""
+    pa, raw = (40, "1122") if model == "cortex-a53" else (44, "1124")
+    lines = [
+        "features: ID_AA64PFR0_EL1=0x0000000001000022 ID_AA64ISAR0_EL1=0x0000000000011120",
+        f"features: ID_AA64ISAR1_EL1=0x0000000000000000 ID_AA64MMFR0_EL1=0x000000000000{raw}",
+        "features: ID_AA64MMFR1_EL1=0x0000000000000000 ID_AA64DFR0_EL1=0x0000000010305106",
+        "features: el0=a64+a32(0x2) el1=a64+a32(0x2) el2=none(0x0) el3=none(0x0)",
+        "features: fp=present(0x0) simd=present(0x0) gic=v3(0x1) aes=aes+pmull(0x2)",
+        "features: sha1=present(0x1) sha2=sha256(0x1) crc32=present(0x1) atomics=none(0x0)",
+        f"features: pa-bits={pa}(0x{raw[-1]}) asid-bits=16(0x2) vmid-bits=8(0x0) granule4k=present(0x0)",
+        "features: granule16k=none(0x0) granule64k=present(0x0) pan=none(0x0) hafdbs=none(0x0)",
+        "features: sb=none(0x0) debug=implemented(0x6) breakpoints=6(0x5) watchpoints=4(0x3)",
+    ]
+    return b"\r\n" + "\r\n".join(lines).encode() + b"\r\n" + PROMPT
+
+
+def cpu_discovery_exchanges(model, count):
+    yield next(uart_exchanges())
+    for payload, response in (
+        (b"help", b"\r\n" + HELP + PROMPT),
+        (b"topology", topology_report(count)),
+        (b"features", feature_report(model)),
+        (b" topology  ", topology_report(count)),
+        (b"features  ", feature_report(model)),
+        (b"topology x", b"\r\nusage: topology\r\n" + PROMPT),
+        (b"features x", b"\r\nusage: features\r\n" + PROMPT),
+        (b"irq test", b"\r\nirq: test OK\r\n" + PROMPT),
+        (b"echo discovery recovered", b"\r\necho: discovery recovered\r\n" + PROMPT),
+    ):
+        yield from command_exchange("CPU discovery", payload, response)
+
+
+def cpu_discovery_test(command, timeout=10):
+    if not math.isfinite(timeout) or timeout <= 0:
+        raise ValueError("Serial deadline must be positive")
+    deadline = time.monotonic() + timeout
+    output, diagnostics = bytearray(), bytearray()
+    last_pid = 0
+    for model, count in (("cortex-a53", 1), ("cortex-a53", 4), ("cortex-a53", 8), ("cortex-a57", 1), ("cortex-a57", 4)):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return BootResult(False, "Timed out during CPU discovery", bytes(output), bytes(diagnostics), last_pid)
+        scenario = list(command)
+        scenario[scenario.index("-cpu") + 1] = model
+        scenario[scenario.index("-smp") + 1] = str(count)
+        result = serial_test(scenario, remaining, cpu_discovery_exchanges(model, count))
+        output.extend(result.stdout); diagnostics.extend(result.stderr); last_pid = result.pid
+        if not result.success:
+            return BootResult(False, f"{model}, {count} CPUs: {result.reason}", bytes(output), bytes(diagnostics), last_pid)
+    return BootResult(True, "CPU topology and architectural features verified", bytes(output), bytes(diagnostics), last_pid)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -864,7 +923,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
