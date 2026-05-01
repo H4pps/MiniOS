@@ -1,6 +1,7 @@
 #include "mini_os/console.h"
 
 #include "mini_os/exception.h"
+#include "mini_os/features.h"
 #include "mini_os/heap.h"
 #include "mini_os/interrupt.h"
 #include "mini_os/line_editor.h"
@@ -12,6 +13,7 @@
 #include "mini_os/recovery.h"
 #include "mini_os/serial_queue.h"
 #include "mini_os/timer.h"
+#include "mini_os/topology.h"
 
 namespace {
 void put_character(void *, char character) { platform::early_putc(character); }
@@ -47,7 +49,11 @@ namespace kernel {
             platform::early_putc('\n');
             {
                 const auto command = parse_command({editor.text(), editor.length()});
-                if (command.kind == CommandKind::diag) {
+                if (command.kind == CommandKind::topology) {
+                    render_topology(writer, platform::cpu_inventory(), platform::cpu_topology());
+                } else if (command.kind == CommandKind::features) {
+                    render_features(writer, arch::read_feature_snapshot());
+                } else if (command.kind == CommandKind::diag) {
                     platform::render_diagnostics(writer);
                 } else if (command.kind == CommandKind::perf ||
                            command.kind == CommandKind::perf_test) {

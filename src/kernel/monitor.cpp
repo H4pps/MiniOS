@@ -34,6 +34,10 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::cpu;
     } else if (command.name.equals("mmu")) {
         command.kind = CommandKind::mmu;
+    } else if (command.name.equals("topology")) {
+        command.kind = CommandKind::topology;
+    } else if (command.name.equals("features")) {
+        command.kind = CommandKind::features;
     } else if (command.name.equals("diag")) {
         command.kind = CommandKind::diag;
     } else if (command.name.equals("uart")) {
@@ -86,6 +90,7 @@ Command parse_command(TextSpan line) {
         command.kind = CommandKind::unknown;
     }
     if ((command.kind == CommandKind::help || command.kind == CommandKind::cpu ||
+         command.kind == CommandKind::topology || command.kind == CommandKind::features ||
          command.kind == CommandKind::diag || command.kind == CommandKind::timer ||
          command.kind == CommandKind::uart || command.kind == CommandKind::mmu) &&
         command.arguments.size != 0) {
@@ -101,6 +106,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::diag:
     case CommandKind::perf:
     case CommandKind::perf_test:
+    case CommandKind::topology:
+    case CommandKind::features:
     case CommandKind::empty:
     case CommandKind::mmu:
     case CommandKind::fault_unmapped:
@@ -128,7 +135,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
             "        inspect mappings and protection\n  heap [test]  inspect or test heap "
             "allocation\n  uart         inspect receive interrupts and queue\n  recover brk|undef  "
             "test controlled exception recovery\n  diag         show coherent kernel diagnostics\n "
-            " perf [test]  measure a bounded memory workload\n");
+            " perf [test]  measure a bounded memory workload\n  topology     show DT CPU "
+            "hierarchy\n  features     show boot CPU capabilities\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");

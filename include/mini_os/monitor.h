@@ -8,6 +8,8 @@ enum class CommandKind : uint8_t {
     empty,
     help,
     cpu,
+    topology,
+    features,
     echo,
     diag,
     perf,

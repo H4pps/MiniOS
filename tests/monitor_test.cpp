@@ -40,7 +40,8 @@ TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
         "inspect mappings and protection\n  heap [test]  inspect or test heap allocation\n  uart   "
         "      inspect receive interrupts and queue\n  recover brk|undef  test controlled "
         "exception recovery\n  diag         show coherent kernel diagnostics\n  perf [test]  "
-        "measure a bounded memory workload\n");
+        "measure a bounded memory workload\n  topology     show DT CPU hierarchy\n  features     "
+        "show boot CPU capabilities\n");
     EXPECT_EQ(response("help x"), "usage: help\n");
     EXPECT_EQ(response("cpu x"), "usage: cpu\n");
     EXPECT_EQ(response("CPU x"), "mini-os: unknown command: CPU\n");
