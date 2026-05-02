@@ -907,9 +907,70 @@ def cpu_discovery_test(command, timeout=10):
             return BootResult(False, f"{model}, {count} CPUs: {result.reason}", bytes(output), bytes(diagnostics), last_pid)
     return BootResult(True, "CPU topology and architectural features verified", bytes(output), bytes(diagnostics), last_pid)
 
+
+def smp_report_matcher(model, count, heartbeats, symbols):
+    def match(data):
+        end = data.find(PROMPT)
+        if end < 0: return None
+        lines = data[2:end].split(b"\r\n")
+        if not data.startswith(b"\r\nsmp:") or len(lines) != count + 2 or lines[-1] != b"":
+            raise ValueError("Incorrect SMP report length")
+        summary = re.fullmatch(rb"smp: discovered=([0-9]+) online=([0-9]+) boot=0 psci=([0-9]+)\.([0-9]+)", lines[0])
+        if summary is None or int(summary[1]) != count or int(summary[2]) != count or (int(summary[3]), int(summary[4])) < (0, 2):
+            raise ValueError("Incorrect SMP online count or PSCI version")
+        for index in range(count):
+            record = re.fullmatch(rb"smp\[([0-9]+)\]: affinity=0x([0-9a-f]{16}) dt-status=enabled online=yes role=(boot|parked) heartbeat=([0-9]+) el=1 midr=0x([0-9a-f]{8}) mmu=on caches=off irq=(on|off) stack-top=0x([0-9a-f]{16}) exception-stack=0x([0-9a-f]{16})", lines[index+1])
+            if record is None: raise ValueError("Incorrect SMP CPU state")
+            stack = symbols["__stack_top"] if index == 0 else symbols["__secondary_stacks_start"] + (index+1)*68*1024
+            emergency = symbols["__exception_stacks_start"] + (index+1)*20*1024
+            midr = int(record[5],16)
+            if (int(record[1]) != index or int(record[2],16) != index or
+                record[3] != (b"boot" if index == 0 else b"parked") or
+                int(record[4]) != (0 if index == 0 else heartbeats) or
+                (midr >> 24) != 0x41 or (midr >> 4) & 4095 != (0xd03 if model == "cortex-a53" else 0xd07) or
+                record[6] != (b"on" if index == 0 else b"off") or
+                int(record[7],16) != stack or int(record[8],16) != emergency):
+                raise ValueError("Incorrect SMP identity, heartbeat, or private stack")
+        return end + len(PROMPT)
+    return match
+
+
+def smp_exchanges(model, count, memory, symbols):
+    yield next(uart_exchanges(memory))
+    yield from command_exchange("SMP help",b"help",b"\r\n"+HELP+PROMPT)
+    yield from command_exchange("initial online state",b"smp",smp_report_matcher(model,count,0,symbols))
+    for heartbeat in range(1,4):
+        yield from command_exchange("secondary SGI heartbeat",b"smp test  ",b"\r\nsmp: test OK\r\n"+PROMPT)
+        yield from command_exchange("verified online state",b"smp  ",smp_report_matcher(model,count,heartbeat,symbols))
+    for payload,response in (
+        (b"smp x",b"\r\nusage: smp [test]\r\n"+PROMPT),
+        (b"smp test x",b"\r\nusage: smp [test]\r\n"+PROMPT),
+        (b"topology",topology_report(count)),
+        (b"features",feature_report(model)),
+        (b"irq test",b"\r\nirq: test OK\r\n"+PROMPT),
+        (b"heap test",b"\r\nheap: test OK\r\n"+PROMPT),
+        (b"echo SMP recovered",b"\r\necho: SMP recovered\r\n"+PROMPT),
+    ): yield from command_exchange("SMP monitor recovery",payload,response)
+
+
+def smp_test(command, timeout=10, symbols=None):
+    if not math.isfinite(timeout) or timeout <= 0: raise ValueError("Serial deadline must be positive")
+    if symbols is None: symbols=inspect(Path(command[command.index("-kernel")+1]), verbose=False)
+    deadline=time.monotonic()+timeout
+    output,diagnostics=bytearray(),bytearray();last_pid=0
+    for model,count,memory in (("cortex-a53",1,128),("cortex-a53",4,128),("cortex-a53",8,128),("cortex-a57",1,128),("cortex-a57",4,128),("cortex-a57",8,256)):
+        remaining=deadline-time.monotonic()
+        if remaining<=0:return BootResult(False,"Timed out during SMP scenarios",bytes(output),bytes(diagnostics),last_pid)
+        scenario=list(command)
+        for flag,value in (("-cpu",model),("-smp",str(count)),("-m",f"{memory}M")):scenario[scenario.index(flag)+1]=value
+        result=serial_test(scenario,remaining,smp_exchanges(model,count,memory,symbols))
+        output.extend(result.stdout);diagnostics.extend(result.stderr);last_pid=result.pid
+        if not result.success:return BootResult(False,f"{model}, {count} CPUs: {result.reason}",bytes(output),bytes(diagnostics),last_pid)
+    return BootResult(True,"PSCI online state and secondary SGI heartbeats verified",bytes(output),bytes(diagnostics),last_pid)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -923,7 +984,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
