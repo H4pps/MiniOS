@@ -12,6 +12,7 @@
 #include "mini_os/platform.h"
 #include "mini_os/recovery.h"
 #include "mini_os/serial_queue.h"
+#include "mini_os/smp.h"
 #include "mini_os/timer.h"
 #include "mini_os/topology.h"
 
@@ -49,7 +50,11 @@ namespace kernel {
             platform::early_putc('\n');
             {
                 const auto command = parse_command({editor.text(), editor.length()});
-                if (command.kind == CommandKind::topology) {
+                if (command.kind == CommandKind::smp) {
+                    render_smp(writer, platform::smp_stats());
+                } else if (command.kind == CommandKind::smp_test) {
+                    writer.write(platform::smp_self_test() ? "smp: test OK\n" : "smp: test FAIL\n");
+                } else if (command.kind == CommandKind::topology) {
                     render_topology(writer, platform::cpu_inventory(), platform::cpu_topology());
                 } else if (command.kind == CommandKind::features) {
                     render_features(writer, arch::read_feature_snapshot());

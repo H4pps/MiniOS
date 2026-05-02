@@ -47,21 +47,24 @@ Command parse_command(TextSpan line) {
     } else if (command.name.equals("echo")) {
         command.kind = CommandKind::echo;
     } else if ((command.name.equals("irq") || command.name.equals("mem") ||
-                command.name.equals("heap") || command.name.equals("perf"))) {
+                command.name.equals("heap") || command.name.equals("perf") ||
+                command.name.equals("smp"))) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
             --argument.size;
         }
         const bool heap = command.name.equals("heap"), memory = command.name.equals("mem"),
-                   perf = command.name.equals("perf");
+                   perf = command.name.equals("perf"), smp = command.name.equals("smp");
         if (argument.size == 0)
             command.kind = heap     ? CommandKind::heap
                            : memory ? CommandKind::mem
+                           : smp    ? CommandKind::smp
                            : perf   ? CommandKind::perf
                                     : CommandKind::irq;
         else if (argument.equals("test"))
             command.kind = heap     ? CommandKind::heap_test
                            : memory ? CommandKind::mem_test
+                           : smp    ? CommandKind::smp_test
                            : perf   ? CommandKind::perf_test
                                     : CommandKind::irq_test;
         else if (memory && argument.equals("reclaim"))
@@ -108,6 +111,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::perf_test:
     case CommandKind::topology:
     case CommandKind::features:
+    case CommandKind::smp:
+    case CommandKind::smp_test:
     case CommandKind::empty:
     case CommandKind::mmu:
     case CommandKind::fault_unmapped:
@@ -136,7 +141,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
             "allocation\n  uart         inspect receive interrupts and queue\n  recover brk|undef  "
             "test controlled exception recovery\n  diag         show coherent kernel diagnostics\n "
             " perf [test]  measure a bounded memory workload\n  topology     show DT CPU "
-            "hierarchy\n  features     show boot CPU capabilities\n");
+            "hierarchy\n  features     show boot CPU capabilities\n  smp [test]   inspect online "
+            "CPUs or test secondary heartbeats\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");
@@ -152,7 +158,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
         writer.write("usage: ");
         writer.write(command.name);
         if ((command.name.equals("irq") || command.name.equals("mem") ||
-             command.name.equals("heap") || command.name.equals("perf"))) {
+             command.name.equals("heap") || command.name.equals("perf") ||
+             command.name.equals("smp"))) {
             writer.write(command.name.equals("mem") ? " [test|reclaim]" : " [test]");
         }
         if (command.name.equals("recover"))

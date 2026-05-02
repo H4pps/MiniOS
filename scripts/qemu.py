@@ -362,7 +362,7 @@ def fdt_test(command, timeout=10):
                       bytes(output), bytes(diagnostics), last_pid)
 
 
-HELP = b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly|stack  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n  uart         inspect receive interrupts and queue\r\n  recover brk|undef  test controlled exception recovery\r\n  diag         show coherent kernel diagnostics\r\n  perf [test]  measure a bounded memory workload\r\n  topology     show DT CPU hierarchy\r\n  features     show boot CPU capabilities\r\n'
+HELP = b'commands:\r\n  help         show commands\r\n  cpu          show CPU inventory and boot registers\r\n  echo [text]  echo text\r\n  fault brk|undef|unmapped|readonly|stack  trigger a fatal exception\r\n  irq [test]   inspect or test interrupts\r\n  timer        inspect timer counters\r\n  mem [test|reclaim]  inspect, test or reclaim physical pages\r\n  mmu          inspect mappings and protection\r\n  heap [test]  inspect or test heap allocation\r\n  uart         inspect receive interrupts and queue\r\n  recover brk|undef  test controlled exception recovery\r\n  diag         show coherent kernel diagnostics\r\n  perf [test]  measure a bounded memory workload\r\n  topology     show DT CPU hierarchy\r\n  features     show boot CPU capabilities\r\n  smp [test]   inspect online CPUs or test secondary heartbeats\r\n'
 
 
 def cpu_report_matcher(model, count):

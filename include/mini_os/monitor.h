@@ -10,6 +10,8 @@ enum class CommandKind : uint8_t {
     cpu,
     topology,
     features,
+    smp,
+    smp_test,
     echo,
     diag,
     perf,
