@@ -9,6 +9,7 @@
 #include "mini_os/performance.h"
 #include "mini_os/platform.h"
 #include "mini_os/serial_queue.h"
+#include "mini_os/smp.h"
 #include "mini_os/timer.h"
 
 #include <stdint.h>
@@ -66,6 +67,9 @@ extern "C" [[noreturn]] void kernel_entry() {
         fail(reason);
     }
     if (const auto *reason = platform::initialize_uart_interrupts()) {
+        fail(reason);
+    }
+    if (const auto *reason = platform::initialize_smp()) {
         fail(reason);
     }
     arch::enable_irq();

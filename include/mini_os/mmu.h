@@ -55,6 +55,7 @@ struct MappingLayout {
     kernel::MemoryRange ram, dtb, image, text, rodata, stack, guard, uart, distributor,
         redistributors;
     kernel::MemoryRange exception_stacks{};
+    kernel::MemoryRange secondary_stacks{};
 };
 const char *build_identity_map(arch::PageTables &tables, const MappingLayout &layout,
                                const kernel::ReservationSet &reservations);

@@ -45,8 +45,8 @@ bool initialize_exception_cpu(size_t slot) {
     asm volatile("mrs %0, TPIDR_EL1" : "=r"(installed));
     return installed == pointer;
 }
-bool install_exception_vectors() {
-    if (!initialize_exception_cpu(0))
+bool install_exception_vectors(size_t slot) {
+    if (!initialize_exception_cpu(slot))
         return false;
     const auto address = reinterpret_cast<uintptr_t>(mini_os_exception_vectors);
     asm volatile("msr VBAR_EL1, %0\n\tisb" : : "r"(address) : "memory");

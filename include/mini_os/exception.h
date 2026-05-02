@@ -39,7 +39,7 @@ struct ExceptionInfo {
 };
 enum class FaultKind : uint8_t { breakpoint, undefined_instruction, unmapped, readonly, stack };
 ExceptionInfo decode_exception(const ExceptionFrame &frame);
-bool install_exception_vectors();
+bool install_exception_vectors(size_t slot = 0);
 [[noreturn]] void trigger_fault(FaultKind kind);
 } // namespace arch
 #endif

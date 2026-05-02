@@ -234,3 +234,24 @@ TEST_F(Tables, EmergencyStacksAreWritableWithOneUnmappedGuardPerCpu) {
     }
     tables.discard();
 }
+
+TEST_F(Tables, SecondaryStacksExcludeAllGuardsAndRejectLayoutConflicts) {
+    kernel::ReservationSet reservations;
+    layout.secondary_stacks = {0x40018000, 8ULL * 68 * 1024, false};
+    layout.image.size += layout.secondary_stacks.size;
+    ASSERT_TRUE(tables.initialize(memory));
+    auto bad = layout;
+    bad.secondary_stacks.size -= 4096;
+    EXPECT_NE(platform::build_identity_map(tables, bad, reservations), nullptr);
+    bad = layout;
+    bad.secondary_stacks.base = layout.stack.base;
+    EXPECT_NE(platform::build_identity_map(tables, bad, reservations), nullptr);
+    ASSERT_EQ(platform::build_identity_map(tables, layout, reservations), nullptr);
+    for (size_t i = 0; i < 8; ++i) {
+        const auto guard = layout.secondary_stacks.base + i * 68ULL * 1024;
+        EXPECT_EQ(tables.descriptor(guard), 0U);
+        EXPECT_NE(tables.descriptor(guard + 4096) & 1, 0U);
+        EXPECT_NE(tables.descriptor(guard + 68ULL * 1024 - 4096) & 1, 0U);
+        EXPECT_EQ(tables.descriptor(guard + 4096) & 0x80, 0U);
+    }
+}

@@ -1,5 +1,6 @@
 #include "mini_os/mmu.h"
 #include "mini_os/recovery.h"
+#include "mini_os/smp.h"
 namespace {
 bool valid(kernel::MemoryRange r) {
     return r.size != 0 && r.base < arch::identity_limit && r.size <= arch::identity_limit - r.base;
@@ -33,6 +34,13 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
          overlap(l.exception_stacks, l.text) || overlap(l.exception_stacks, l.rodata) ||
          overlap(l.exception_stacks, l.stack) || overlap(l.exception_stacks, l.guard)))
         return "mmu invalid exception stacks";
+    if (l.secondary_stacks.size != 0 &&
+        (!aligned(l.secondary_stacks) || !contains(l.image, l.secondary_stacks) ||
+         l.secondary_stacks.size != max_cpus * arch::secondary_stack_stride ||
+         overlap(l.secondary_stacks, l.text) || overlap(l.secondary_stacks, l.rodata) ||
+         overlap(l.secondary_stacks, l.stack) || overlap(l.secondary_stacks, l.guard) ||
+         (l.exception_stacks.size && overlap(l.secondary_stacks, l.exception_stacks))))
+        return "mmu invalid secondary stacks";
     for (size_t i = 0; i < reservations.count; ++i) {
         const auto r = reservations.ranges[i];
         if (r.size == 0 || r.size > UINT64_MAX - r.base ||
@@ -57,7 +65,10 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
         if (page == 0 || page == l.guard.base || reservations.excludes(page) ||
             (page >= l.exception_stacks.base &&
              page - l.exception_stacks.base < l.exception_stacks.size &&
-             (page - l.exception_stacks.base) % arch::exception_stack_stride == 0))
+             (page - l.exception_stacks.base) % arch::exception_stack_stride == 0) ||
+            (page >= l.secondary_stacks.base &&
+             page - l.secondary_stacks.base < l.secondary_stacks.size &&
+             (page - l.secondary_stacks.base) % arch::secondary_stack_stride == 0))
             continue;
         auto kind = arch::MappingKind::writable;
         if (page >= l.text.base && page - l.text.base < l.text.size)

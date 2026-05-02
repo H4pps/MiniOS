@@ -12,6 +12,9 @@ target_link_libraries(mini_os_resources PRIVATE mini_os_kernel_options)
 add_executable(mini_os_kernel
   src/arch/aarch64/boot/start.S
   src/arch/aarch64/cpu.cpp
+  src/arch/aarch64/smp.cpp
+  src/arch/aarch64/boot/secondary.S
+  src/platform/qemu_virt/smp.cpp
   src/arch/aarch64/features.cpp
   src/arch/aarch64/timer.cpp
   src/platform/qemu_virt/timer.cpp

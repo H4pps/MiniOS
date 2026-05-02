@@ -90,6 +90,12 @@ def inspect(image, verbose=True):
     first,last=symbols["__exception_stacks_start"],symbols["__exception_stacks_end"]
     require(first%4096==0 and first>=symbols["__stack_top"] and last-first==8*20*1024 and last<=symbols["__image_end"], "Invalid guarded emergency stacks")
     require(any(low<=first<last<=high and flags==6 for low,high,flags in loads), "Emergency stacks are not writable RAM")
+    require("__secondary_stacks_start" in symbols and "__secondary_stacks_end" in symbols, "Missing secondary stack layout")
+    secondary_first, secondary_last = symbols["__secondary_stacks_start"], symbols["__secondary_stacks_end"]
+    require(secondary_first % 4096 == 0 and secondary_first >= last and secondary_last - secondary_first == 8 * 68 * 1024 and secondary_last <= symbols["__image_end"], "Invalid guarded secondary stacks")
+    require(any(low <= secondary_first < secondary_last <= high and flags == 6 for low, high, flags in loads), "Secondary stacks are not writable RAM")
+    secondary_entry = symbols.get("mini_os_secondary_entry", 0)
+    require(secondary_entry % 16 == 0 and any(low <= secondary_entry < high and flags == 5 for low, high, flags in loads), "Missing executable secondary entry")
     for kind in ("brk", "undef"):
         site=symbols.get(f"mini_os_recovery_{kind}_site",0);resume=symbols.get(f"mini_os_recovery_{kind}_resume",0)
         require(site%4==0 and resume==site+4 and any(low<=site<resume<high and flags==5 for low,high,flags in loads), "Invalid scoped recovery site")
