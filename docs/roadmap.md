@@ -27,13 +27,12 @@ verification and relevant host tests; a successful build alone is insufficient.
 Boot, the editable serial monitor, device-tree discovery, CPU inspection,
 fatal diagnostics, GICv3 IRQ delivery, recurring timer ticks, physical page
 allocation, protected identity mappings, heap/reclamation, UART IRQ reception,
-controlled exception recovery with emergency stacks, and CPU hierarchy/features
-are verified natively and in
-ARM64/AMD64 containers. AMD64 uses local emulation. Each of the four foundation
+controlled exception recovery with emergency stacks, CPU hierarchy/features,
+and parked secondary startup are verified natively and in ARM64/AMD64 containers. AMD64 uses local emulation. Each of the four foundation
 operations passed its complete checks before the next began.
 
-The current baseline passes **140 host tests per configuration** (debug,
-release, sanitizers) and **32 CTests per kernel preset** (debug/release) in all
+The current baseline passes **150 host tests per configuration** (debug,
+release, sanitizers) and **34 CTests per kernel preset** (debug/release) in all
 three environments. Remote CI verification remains pending.
 
 - [x] **Boot + linker script**
@@ -104,9 +103,10 @@ three environments. Remote CI verification remains pending.
   - [x] Verify heap fragmentation, coalescing, invalid frees and DTB reclamation on native/ARM64/AMD64: 109 host tests/configuration, 23 CTests/kernel preset.
   - [x] Add interrupt-driven UART reception.
   - [x] Verify bounded receive handlers, queue/error recovery, idle wakeups and serial bursts on native/ARM64/AMD64: 117 host tests/configuration, 25 CTests/kernel preset.
-- [ ] **Further CPU discovery and startup**
+- [x] **Further CPU discovery and startup**
   - [x] Discover socket/cluster/core/thread hierarchy from `cpu-map`.
-  - [ ] Implement secondary CPU startup and track actual online state.
+  - [x] Implement secondary CPU startup and track actual online state.
+  - [x] Verify PSCI startup, guarded private stacks, local GIC state and repeated SGI heartbeats on A53/A57 with one/four/eight CPUs; native/ARM64/AMD64 checks pass 150 host tests/configuration and 34 CTests/kernel preset.
   - [x] Decode architectural CPU feature registers.
   - [x] Verify hierarchy and raw/decoded features on A53 with one/four/eight CPUs and A57 with one/four; native/ARM64/AMD64 checks pass 140 host tests/configuration and 32 CTests/kernel preset.
 - [ ] **Scheduler**
@@ -129,5 +129,5 @@ three environments. Remote CI verification remains pending.
   - [x] Pass native, ARM64 Docker and emulated AMD64 checks: 127 host tests/configuration, 30 CTests/kernel preset.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap/UART-IRQ/recovery/performance/CPU-discovery tests, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap/UART-IRQ/recovery/performance/CPU-discovery/SMP tests, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.

@@ -227,6 +227,7 @@ lowercase and case-sensitive:
 | `cpu` | Report DT CPU inventory and the boot CPU's current identity and state |
 | `topology` | Show DT socket/cluster/core/thread locations without inferring missing hierarchy |
 | `features` | Decode boot CPU feature registers and retain their raw encodings |
+| `smp [test]` | Show actual online CPU state or verify secondary SGI heartbeats |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
 | `mmu` | Inspect translation registers, identity mappings, and permission probes |
 | `mem [test\|reclaim]` | Inspect/test physical pages or reclaim reusable reservations |
@@ -294,7 +295,7 @@ platform converts newlines to CRLF.
 The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
 for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
-Secondary CPU startup, EL2/EL3 transitions,
+EL2/EL3 transitions,
 and scheduling remain later milestones.
 
 Interactive execution and tests share this fixed emulator configuration:
@@ -348,8 +349,7 @@ CPU's registers are sampled: MIDR_EL1, MPIDR_EL1, CurrentEL, DAIF, and SCTLR_EL1
 The report shows implementer/part/variant/revision, Aff3–Aff0, EL, interrupt masks,
 and MMU/cache enable state. Cortex-A53/A57 names come from the hardware identity;
 unknown identities still show raw fields. Registers are read without changing
-configuration or starting secondary CPUs. Shared-cache discovery and PSCI startup
-remain deferred. Hex output is
+configuration. Shared-cache discovery remains deferred. Hex output is
 lowercase and fixed-width; counts and decoded components are decimal.
 
 `topology` follows the [CPU topology binding](https://raw.githubusercontent.com/devicetree-org/dt-schema/main/dtschema/schemas/cpu-map.yaml).
@@ -383,6 +383,45 @@ Host fixtures cover nested hierarchy, threads, disabled CPUs, missing maps,
 capacity, ambiguous references, malformed names and feature encoding boundaries.
 Separate fake-process tests verify fragmented reports, wrong fields/counts,
 closed input, premature exit, stderr draining, timeouts and process cleanup.
+
+Secondary startup follows the [PSCI binding](https://raw.githubusercontent.com/torvalds/linux/master/Documentation/devicetree/bindings/arm/psci.yaml).
+The platform requires one enabled root-level PSCI 0.2/1.0 provider and its
+`hvc` or `smc` conduit; every enabled secondary CPU must use `enable-method = "psci"`.
+It reads the firmware version and invokes the AArch64 CPU_ON function with each
+discovered affinity, a dedicated executable entry and its logical slot. The boot
+CPU always owns slot zero even when its inventory index is nonzero. Disabled
+records remain offline. Legacy custom function IDs and spin-table startup are
+unsupported.
+
+The image reserves eight private 64 KiB stack slots, each with an unmapped 4 KiB
+guard, alongside the eight guarded exception stacks. Secondary assembly preserves
+shared BSS, masks interrupts, selects SP_EL1 and enters its own stack. Each CPU
+checks EL1 and MPIDR, installs its own vector context, activates the shared immutable
+identity mappings with caches disabled, and initializes only its redistributor and
+GIC CPU interface. Global distributor state and the boot CPU's timer/UART routing
+remain intact. Startup waits have a two-second overall counter deadline; hardware
+readiness polls are bounded. Startup errors fail boot before confirmation.
+
+`smp` reports DT availability separately from actual online state, PSCI version,
+boot index, MIDR/EL, interrupt/MMU/cache state, stack tops and heartbeat counts.
+Secondary CPUs park in WFI with interrupt masks set. They acknowledge and EOI
+reserved SGI 1 through their local GIC interface and publish a heartbeat using
+release/acquire operations; spurious IDs require no EOI. Unexpected real sources
+mark that CPU failed and halt it. `smp test` sends and verifies one heartbeat per
+online secondary under a shared deadline. The boot CPU's SGI 0 keeps its existing
+returning-handler test. Normal kernel/device/allocator work still runs on the boot
+CPU; this milestone does not distribute tasks. A one-CPU machine reports one
+online CPU and has no secondary heartbeat to send.
+
+`kernel.smp` uses one ten-second deadline for A53 and A57 with one/four/eight CPUs,
+including 256 MiB for the eight-CPU A57 scenario. It checks exact online counts,
+identity, private stack symbols, repeated heartbeat progression, command usage,
+subsequent self-SGI and heap operations, and console recovery. ELF inspection
+checks stack geometry/permissions and the secondary entry. Host sanitizer fixtures
+cover PSCI discovery/method failures, disabled and nonzero-boot slot mapping,
+capacity, affinity arithmetic, local GIC initialization and unmapped stack guards.
+Separate fake processes cover fragmented reports, incorrect counts/state/stacks,
+closed input, premature exit, stderr, deadlines and terminate/kill/reap cleanup.
 
 The boot runner requires the exact resource confirmation followed by the exact
 complete boot success line on serial stdout within 10 seconds. Failure markers,
@@ -428,7 +467,7 @@ single redistributor region with a 128 KiB stride, finds the boot frame by CPU
 affinity, and bounds hardware-ready polling. Unsupported layouts, overlapping
 UART/RAM resources, invalid phandles, or missing hardware fail startup.
 The current QEMU configuration uses a single security state; other GIC security
-configurations, ITS/LPI delivery, and secondary CPU initialization are deferred.
+configurations and ITS/LPI delivery are deferred; secondary initialization uses a separate local-only path.
 
 `irq` reports discovered controller addresses, implemented interrupt capacity,
 delivered IRQs, and self-SGI count. `irq test` sends SGI 0 to the boot CPU and
@@ -613,7 +652,7 @@ reporting halts without attempting another report.
 
 Exception entry preserves scratch registers in a per-CPU context before touching
 SP, then switches to a dedicated 16 KiB stack with an unmapped 4 KiB guard.
-The image reserves eight guarded slots for later CPU startup. `TPIDR_EL1` holds
+The image reserves eight guarded exception slots used by boot and secondary CPUs. `TPIDR_EL1` holds
 the current context and `TPIDRRO_EL0` is reserved as entry scratch. The context
 and vector base are initialized before other boot checks. Returning IRQs restore
 the interrupted stack and complete integer state through `ERET`. D/A/F remain
@@ -687,7 +726,7 @@ counters, partial output, stdin/exit failures, deadlines, diagnostics and cleanu
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance and CPU-discovery coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance and CPU-discovery and SMP coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -696,7 +735,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 140 host tests per configuration and
-32 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 150 host tests per configuration and
+34 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.
