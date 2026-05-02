@@ -71,7 +71,7 @@ if(MINI_OS_SANITIZERS)
   target_link_options(mini_os_options INTERFACE -fsanitize=address,undefined)
 endif()
 
-add_library(mini_os_cpu STATIC src/arch/aarch64/cpu_decode.cpp src/arch/aarch64/exception_decode.cpp src/arch/aarch64/page_tables.cpp src/arch/aarch64/recovery.cpp src/arch/aarch64/features_decode.cpp src/arch/aarch64/smp_decode.cpp)
+add_library(mini_os_cpu STATIC src/arch/aarch64/cpu_decode.cpp src/arch/aarch64/exception_decode.cpp src/arch/aarch64/page_tables.cpp src/arch/aarch64/recovery.cpp src/arch/aarch64/features_decode.cpp src/arch/aarch64/smp_decode.cpp src/arch/aarch64/task_context.cpp)
 target_include_directories(mini_os_cpu PUBLIC include)
 target_link_libraries(mini_os_cpu PRIVATE mini_os_options)
 
