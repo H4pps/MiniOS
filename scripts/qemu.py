@@ -968,9 +968,57 @@ def smp_test(command, timeout=10, symbols=None):
         if not result.success:return BootResult(False,f"{model}, {count} CPUs: {result.reason}",bytes(output),bytes(diagnostics),last_pid)
     return BootResult(True,"PSCI online state and secondary SGI heartbeats verified",bytes(output),bytes(diagnostics),last_pid)
 
+
+def task_exchanges(memory=128):
+    yield next(uart_exchanges(memory))
+    observed=[]
+    reports=[]
+    def report(batch):
+        def match(data):
+            end=data.find(PROMPT)
+            if end<0:return None
+            body=data[:end+len(PROMPT)]
+            header=re.match(rb"\r\ntasks: cpu=boot capacity=8 current=0 runnable=1 sleeping=0 exited=0 switches=([0-9]+) preemptions=([0-9]+) yields=([0-9]+) sleeps=([0-9]+) completed=([0-9]+)\r\n",body)
+            if header is None:raise ValueError("Incorrect task accounting or runnable state")
+            counters=tuple(int(value) for value in header.groups())
+            if batch==0:
+                if counters!=(0,0,0,0,0) or body[header.end():]!=b"tasks: test=not-run\r\n"+PROMPT:
+                    raise ValueError("Incorrect initial task state")
+            else:
+                result=re.fullmatch(rb"tasks: test OK workers=3 completed=3 preemptions=([0-9]+) yields=([0-9]+) sleeps=6 context=OK stack=OK\r\nmini-os> ",body[header.end():])
+                if result is None:raise ValueError("Incorrect task workload or context report")
+                previous=observed[-1]
+                if (any(value<before for value,before in zip(counters,previous)) or
+                    counters[0]<previous[0]+9 or counters[1]<previous[1]+3 or counters[2]<previous[2]+6 or
+                    counters[3]!=batch*6 or counters[4]!=batch*3 or
+                    int(result[1])!=counters[1]-previous[1] or int(result[2])!=counters[2]-previous[2]):
+                    raise ValueError("Incorrect task progress or workload accounting")
+            observed.append(counters);reports.append(body)
+            return len(body)
+        return match
+    yield from command_exchange("initial task state",b"tasks",report(0))
+    for batch in (1,2):
+        yield from command_exchange("preemptive task workload",b"tasks test  ",report(batch))
+        yield from command_exchange("retained task accounting",b"tasks",reports[-1])
+    for payload,response in (
+        (b"tasks x",b"\r\nusage: tasks [test]\r\n"+PROMPT),
+        (b"tasks test x",b"\r\nusage: tasks [test]\r\n"+PROMPT),
+        (b"help",b"\r\n"+HELP+PROMPT),
+        (b"recover brk",b"\r\nrecover: brk OK count=1\r\n"+PROMPT),
+        (b"smp test",b"\r\nsmp: test OK\r\n"+PROMPT),
+        (b"heap test",b"\r\nheap: test OK\r\n"+PROMPT),
+        (b"echo tasks recovered",b"\r\necho: tasks recovered\r\n"+PROMPT),
+    ):yield from command_exchange("task monitor recovery",payload,response)
+    progress=timer_exchanges(memory);next(progress)
+    yield from progress
+
+
+def tasks_test(command,timeout=10):
+    return scenario_test(command,timeout,(("cortex-a53",1,128),("cortex-a53",4,128),("cortex-a57",1,128),("cortex-a57",8,256)),task_exchanges)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test", "task-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -984,7 +1032,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test, "task-test": tasks_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
