@@ -69,6 +69,9 @@ const char *initialize_mmu() {
         return "mmu translation verification failed";
     return nullptr;
 }
+bool copy_kernel_mappings(arch::PageTables &destination) {
+    return destination.initialize_copy(tables, memory);
+}
 void render_mmu(kernel::TextWriter &w) {
     const auto s = arch::read_mmu_snapshot();
     w.write("mmu: SCTLR_EL1=");

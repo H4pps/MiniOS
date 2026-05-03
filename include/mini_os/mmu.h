@@ -8,7 +8,15 @@ constexpr uint64_t table_address_mask = (physical_limit - 1) & ~4095ULL;
 constexpr uint64_t mmu_mair = 0x44; // Attr0: Normal non-cacheable; Attr1: Device-nGnRnE.
 constexpr uint64_t mmu_tcr =
     (2ULL << 32) | (2ULL << 30) | (1ULL << 23) | (25ULL << 16) | (3ULL << 12) | 25;
-enum class MappingKind : uint8_t { writable, readonly, executable, device };
+enum class MappingKind : uint8_t {
+    writable,
+    readonly,
+    executable,
+    device,
+    user_readonly,
+    user_executable,
+    user_writable
+};
 struct TablePage {
     uint64_t address;
     uint64_t *entries;
@@ -23,7 +31,9 @@ class PageTables {
   public:
     constexpr PageTables() : memory_(nullptr), root_(0), count_(0), sealed_(false) {}
     bool initialize(const TableMemory &memory);
+    bool initialize_copy(const PageTables &source, const TableMemory &memory);
     bool map(kernel::MemoryRange range, MappingKind kind);
+    bool map_at(uint64_t virtual_address, kernel::MemoryRange physical, MappingKind kind);
     uint64_t descriptor(uint64_t address) const;
     void discard();
     void seal() { sealed_ = true; }
@@ -48,6 +58,8 @@ struct MmuSnapshot {
 };
 MmuSnapshot read_mmu_snapshot();
 bool activate_mmu(uint64_t root);
+bool switch_address_space(uint64_t root);
+Translation translate_user(uint64_t address, bool write = false);
 Translation translate(uint64_t address, bool write = false);
 } // namespace arch
 namespace platform {
@@ -62,5 +74,6 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &la
                                const kernel::ReservationSet &reservations);
 const char *initialize_mmu();
 void render_mmu(kernel::TextWriter &writer);
+bool copy_kernel_mappings(arch::PageTables &destination);
 } // namespace platform
 #endif

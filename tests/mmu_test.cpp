@@ -12,31 +12,32 @@ class Tables : public testing::Test {
     std::array<bool, 16> used{};
     size_t limit = 16;
     bool malformed = false;
-    arch::TableMemory memory{this,
-                             [](void *p, arch::TablePage &page) {
-                                 auto &s = *static_cast<Tables *>(p);
-                                 for (size_t i = 0; i < s.limit; ++i)
-                                     if (!s.used[i]) {
-                                         s.used[i] = true;
-                                         page.address = 0x100000 + i * 4096 + (s.malformed ? 1 : 0);
-                                         page.entries = s.pages[i].data();
-                                         return true;
-                                     }
-                                 return false;
-                             },
-                             [](void *p, uint64_t address) -> uint64_t * {
-                                 auto &s = *static_cast<Tables *>(p);
-                                 if (address < 0x100000 || (address - 0x100000) % 4096 != 0 ||
-                                     (address - 0x100000) / 4096 >= s.limit)
-                                     return nullptr;
-                                 const auto i = static_cast<size_t>((address - 0x100000) / 4096);
-                                 return s.used[i] ? s.pages[i].data() : nullptr;
-                             },
-                             [](void *p, uint64_t address) {
-                                 auto &s = *static_cast<Tables *>(p);
-                                 s.used.at(static_cast<size_t>((address - 0x100000) / 4096)) =
-                                     false;
-                             }};
+    uint64_t unreadable_address = 0;
+    arch::TableMemory memory{
+        this,
+        [](void *p, arch::TablePage &page) {
+            auto &s = *static_cast<Tables *>(p);
+            for (size_t i = 0; i < s.limit; ++i)
+                if (!s.used[i]) {
+                    s.used[i] = true;
+                    page.address = 0x100000 + i * 4096 + (s.malformed ? 1 : 0);
+                    page.entries = s.pages[i].data();
+                    return true;
+                }
+            return false;
+        },
+        [](void *p, uint64_t address) -> uint64_t * {
+            auto &s = *static_cast<Tables *>(p);
+            if (address == s.unreadable_address || address < 0x100000 ||
+                (address - 0x100000) % 4096 != 0 || (address - 0x100000) / 4096 >= s.limit)
+                return nullptr;
+            const auto i = static_cast<size_t>((address - 0x100000) / 4096);
+            return s.used[i] ? s.pages[i].data() : nullptr;
+        },
+        [](void *p, uint64_t address) {
+            auto &s = *static_cast<Tables *>(p);
+            s.used.at(static_cast<size_t>((address - 0x100000) / 4096)) = false;
+        }};
     arch::PageTables tables;
     platform::MappingLayout layout{{0x40000000, 0x100000, false}, {0x40000000, 0x10000, false},
                                    {0x40010000, 0x8000, false},   {0x40010000, 0x1000, false},
@@ -275,4 +276,105 @@ TEST_F(Tables, TaskStacksHavePrivateWritablePagesAndUnmappedGuards) {
         EXPECT_NE(tables.descriptor(guard + 68ULL * 1024 - 4096) & 1, 0U);
         EXPECT_EQ(tables.descriptor(guard + 4096) & 0x80, 0U);
     }
+}
+
+TEST_F(Tables, SeparateVirtualPhysicalAddressesEnforceUserWxAndPrivilegePermissions) {
+    ASSERT_TRUE(tables.initialize(memory));
+    const std::array<arch::MappingKind, 3> kinds{arch::MappingKind::user_readonly,
+                                                 arch::MappingKind::user_executable,
+                                                 arch::MappingKind::user_writable};
+    for (size_t i = 0; i < kinds.size(); ++i) {
+        const uint64_t physical = 0x40000000ULL + i * 4096ULL,
+                       virtual_address = 0x1000000ULL + i * 4096ULL;
+        ASSERT_TRUE(tables.map_at(virtual_address, {physical, 4096, false}, kinds[i]));
+        const auto d = tables.descriptor(virtual_address);
+        EXPECT_EQ(d & arch::table_address_mask, physical);
+        EXPECT_NE(d & 0x40, 0U);
+        EXPECT_NE(d & (1ULL << 53), 0U);
+        EXPECT_EQ((d & (1ULL << 54)) == 0, i == 1);
+        EXPECT_EQ((d & 0x80) != 0, i != 2);
+        EXPECT_EQ(tables.descriptor(physical), 0U);
+    }
+    EXPECT_FALSE(tables.map_at(0, {0x40000000, 4096, false}, kinds[0]));
+    EXPECT_FALSE(tables.map_at(0x1001, {0x40000000, 4096, false}, kinds[0]));
+    EXPECT_FALSE(tables.map_at(arch::identity_limit - 4096, {0x40000000, 8192, false}, kinds[0]));
+    EXPECT_FALSE(tables.map_at(0x1000000, {arch::physical_limit, 4096, false}, kinds[0]));
+    EXPECT_FALSE(tables.map_at(0x1000000, {arch::physical_limit - 4096, 8192, false}, kinds[0]));
+    ASSERT_TRUE(tables.map_at(arch::identity_limit - 4096,
+                              {arch::physical_limit - 4096, 4096, false}, kinds[0]));
+    EXPECT_EQ(tables.descriptor(arch::identity_limit - 4096) & arch::table_address_mask,
+              arch::physical_limit - 4096);
+    EXPECT_FALSE(tables.map({arch::physical_limit - 4096, 4096, false}, kinds[0]));
+    tables.discard();
+}
+TEST_F(Tables, PrivateMappingCopiesPreservePermissionsAndNeverMutateSource) {
+    ASSERT_TRUE(tables.initialize(memory));
+    ASSERT_TRUE(tables.map({0x40200000, 4096, false}, arch::MappingKind::executable));
+    ASSERT_TRUE(tables.map({0x40201000, 4096, false}, arch::MappingKind::readonly));
+    ASSERT_TRUE(tables.map({0x40300000, 4096, false}, arch::MappingKind::writable));
+    arch::PageTables copy;
+    EXPECT_FALSE(tables.initialize_copy(tables, memory));
+    ASSERT_TRUE(copy.initialize_copy(tables, memory));
+    EXPECT_NE(copy.root(), tables.root());
+    EXPECT_EQ(copy.count(), tables.count());
+    for (uint64_t address : {0x40200000ULL, 0x40201000ULL, 0x40300000ULL})
+        EXPECT_EQ(copy.descriptor(address), tables.descriptor(address));
+    ASSERT_TRUE(
+        copy.map_at(0x1000000, {0x40400000, 4096, false}, arch::MappingKind::user_executable));
+    EXPECT_EQ(tables.descriptor(0x1000000), 0U);
+    copy.discard();
+    EXPECT_NE(tables.descriptor(0x40200000), 0U);
+    tables.discard();
+    for (bool allocated : used)
+        EXPECT_FALSE(allocated);
+}
+TEST_F(Tables, CopyExhaustionAndMalformedSourceRollBackOnlyOwnedTables) {
+    ASSERT_TRUE(tables.initialize(memory));
+    ASSERT_TRUE(tables.map({0x40200000, 4096, false}, arch::MappingKind::executable));
+    arch::PageTables copy;
+    limit = 5;
+    EXPECT_FALSE(copy.initialize_copy(tables, memory));
+    EXPECT_EQ(copy.root(), 0U);
+    EXPECT_EQ(copy.count(), 0U);
+    for (size_t i = 0; i < used.size(); ++i)
+        EXPECT_EQ(used[i], i < 3);
+    limit = 16;
+    const auto top = pages[0][1];
+    pages[0][1] = 1;
+    EXPECT_FALSE(copy.initialize_copy(tables, memory));
+    EXPECT_EQ(copy.root(), 0U);
+    pages[0][1] = top;
+    const auto middle = static_cast<size_t>(((top & arch::table_address_mask) - 0x100000) / 4096);
+    const auto leaf = pages[middle][1];
+    pages[middle][1] = 1;
+    EXPECT_FALSE(copy.initialize_copy(tables, memory));
+    EXPECT_EQ(copy.root(), 0U);
+    pages[middle][1] = leaf;
+    tables.discard();
+    for (bool allocated : used)
+        EXPECT_FALSE(allocated);
+}
+
+TEST_F(Tables, CopiesSealedKernelRootsAndRejectsUnreadableProvidersWithoutLeaks) {
+    arch::PageTables copy;
+    EXPECT_FALSE(copy.initialize_copy(tables, memory));
+    ASSERT_TRUE(tables.initialize(memory));
+    ASSERT_TRUE(tables.map({0x40200000, 4096, false}, arch::MappingKind::executable));
+    unreadable_address = tables.root();
+    EXPECT_FALSE(copy.initialize_copy(tables, memory));
+    EXPECT_EQ(copy.root(), 0U);
+    for (size_t i = 0; i < used.size(); ++i)
+        EXPECT_EQ(used[i], i < 3);
+    unreadable_address = 0;
+    tables.seal();
+    ASSERT_TRUE(copy.initialize_copy(tables, memory));
+    const auto root = copy.root();
+    EXPECT_FALSE(copy.initialize_copy(tables, memory));
+    EXPECT_EQ(copy.root(), root);
+    ASSERT_TRUE(
+        copy.map_at(0x1000000, {0x40400000, 4096, false}, arch::MappingKind::user_executable));
+    EXPECT_EQ(tables.descriptor(0x1000000), 0U);
+    copy.discard();
+    for (size_t i = 0; i < used.size(); ++i)
+        EXPECT_EQ(used[i], i < 3);
 }
