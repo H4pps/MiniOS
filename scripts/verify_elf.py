@@ -96,6 +96,12 @@ def inspect(image, verbose=True):
     require(any(low <= secondary_first < secondary_last <= high and flags == 6 for low, high, flags in loads), "Secondary stacks are not writable RAM")
     secondary_entry = symbols.get("mini_os_secondary_entry", 0)
     require(secondary_entry % 16 == 0 and any(low <= secondary_entry < high and flags == 5 for low, high, flags in loads), "Missing executable secondary entry")
+    task_first, task_last = symbols.get("__task_stacks_start", 0), symbols.get("__task_stacks_end", 0)
+    require(task_first % 4096 == 0 and task_first >= secondary_last and task_last - task_first == 8 * 68 * 1024 and task_last <= symbols["__image_end"], "Invalid guarded task stacks")
+    require(any(low <= task_first < task_last <= high and flags == 6 for low, high, flags in loads), "Task stacks are not writable RAM")
+    for kind in ("yield", "sleep", "exit", "probe"):
+        site = symbols.get(f"mini_os_task_{kind}_site", 0)
+        require(site % 4 == 0 and any(low <= site < site + 4 < high and flags == 5 for low, high, flags in loads), "Missing executable task SVC site")
     for kind in ("brk", "undef"):
         site=symbols.get(f"mini_os_recovery_{kind}_site",0);resume=symbols.get(f"mini_os_recovery_{kind}_resume",0)
         require(site%4==0 and resume==site+4 and any(low<=site<resume<high and flags==5 for low,high,flags in loads), "Invalid scoped recovery site")

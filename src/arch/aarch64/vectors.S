@@ -89,7 +89,8 @@ mini_os_exception_entry:
     str x1, [sp, #MINI_OS_FRAME_FAR]
     mov x0, sp
     bl mini_os_exception_handler
-    // Only a handled EL1h IRQ returns. Keep IRQ masked until ERET restores SPSR.
+    // The handler selects the saved task frame; restoration remains masked.
+    mov sp, x0
     mrs x0, tpidr_el1
     str xzr, [x0, #MINI_OS_CONTEXT_ACTIVE]
     ldr x0, [sp, #MINI_OS_FRAME_ELR]

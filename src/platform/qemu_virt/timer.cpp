@@ -7,13 +7,20 @@
 #include "mini_os/timer_resources.h"
 namespace {
 kernel::TimerState timer;
+bool scheduler_tick = false;
 void tick(void *) {
-    kernel::advance_timer(timer, arch::physical_counter());
+    if (kernel::advance_timer(timer, arch::physical_counter()))
+        scheduler_tick = true;
     arch::set_timer_deadline(
         timer.deadline); // Deassert the level before the dispatcher issues EOI.
 }
 } // namespace
 namespace platform {
+bool take_scheduler_tick() {
+    const auto value = scheduler_tick;
+    scheduler_tick = false;
+    return value;
+}
 const char *initialize_timer() {
     arch::set_timer_enabled(false);
     fdt::View view;

@@ -18,6 +18,8 @@ void render_timer(TextWriter &writer, const TimerStats &stats);
 } // namespace kernel
 namespace platform {
 const char *initialize_timer();
+// Consumed by the masked boot-CPU IRQ adapter after dispatch and EOI.
+bool take_scheduler_tick();
 kernel::TimerStats timer_stats();
 } // namespace platform
 #endif

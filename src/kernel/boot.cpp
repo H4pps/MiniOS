@@ -10,6 +10,7 @@
 #include "mini_os/platform.h"
 #include "mini_os/serial_queue.h"
 #include "mini_os/smp.h"
+#include "mini_os/tasks.h"
 #include "mini_os/timer.h"
 
 #include <stdint.h>
@@ -72,6 +73,8 @@ extern "C" [[noreturn]] void kernel_entry() {
     if (const auto *reason = platform::initialize_smp()) {
         fail(reason);
     }
+    if (const auto *reason = platform::initialize_tasks())
+        fail(reason);
     arch::enable_irq();
     platform::early_write("mini-os: boot OK\n");
     kernel::run_console();

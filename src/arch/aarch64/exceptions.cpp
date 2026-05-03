@@ -4,6 +4,8 @@
 #include "mini_os/interrupt.h"
 #include "mini_os/platform.h"
 #include "mini_os/recovery.h"
+#include "mini_os/tasks.h"
+#include "mini_os/timer.h"
 
 extern "C" {
 extern const char mini_os_exception_vectors[];
@@ -82,14 +84,17 @@ bool recovery_self_test(FaultKind kind) {
     mini_os_trigger_undef();
 }
 } // namespace arch
-extern "C" void mini_os_exception_handler(arch::ExceptionFrame *frame) {
+extern "C" arch::ExceptionFrame *mini_os_exception_handler(arch::ExceptionFrame *frame) {
     if (frame->vector == 5 && platform::dispatch_interrupt()) {
-        return;
+        return kernel::schedule_irq(*frame, platform::take_scheduler_tick());
     }
+    const auto operation = arch::decode_task_operation(*frame, arch::task_sites());
+    if (operation != arch::TaskOperation::invalid)
+        return kernel::schedule_trap(*frame, operation);
     auto &cpu = context();
     if (arch::apply_recovery(*frame, cpu.recovery)) {
         ++cpu.recovered;
-        return;
+        return frame;
     }
     kernel::TextWriter writer(put_character, nullptr);
     kernel::render_exception(writer, *frame);

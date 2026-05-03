@@ -56,6 +56,7 @@ struct MappingLayout {
         redistributors;
     kernel::MemoryRange exception_stacks{};
     kernel::MemoryRange secondary_stacks{};
+    kernel::MemoryRange task_stacks{};
 };
 const char *build_identity_map(arch::PageTables &tables, const MappingLayout &layout,
                                const kernel::ReservationSet &reservations);

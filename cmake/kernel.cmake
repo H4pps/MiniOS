@@ -15,6 +15,11 @@ add_executable(mini_os_kernel
   src/arch/aarch64/smp.cpp
   src/arch/aarch64/boot/secondary.S
   src/platform/qemu_virt/smp.cpp
+  src/arch/aarch64/tasks.cpp
+  src/arch/aarch64/tasks.S
+  src/arch/aarch64/task_probe.S
+  src/platform/qemu_virt/tasks.cpp
+  src/kernel/tasks.cpp
   src/arch/aarch64/features.cpp
   src/arch/aarch64/timer.cpp
   src/platform/qemu_virt/timer.cpp

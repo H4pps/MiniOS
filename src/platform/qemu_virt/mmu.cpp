@@ -7,6 +7,7 @@ extern "C" {
 extern const uint8_t __dtb_start[], __dtb_end[], __image_start[], __image_end[];
 extern const uint8_t __exception_stacks_start[], __exception_stacks_end[];
 extern const uint8_t __secondary_stacks_start[], __secondary_stacks_end[];
+extern const uint8_t __task_stacks_start[], __task_stacks_end[];
 extern const uint8_t __text_start[], __text_end[], __rodata_start[], __rodata_end[];
 extern const uint8_t __stack_bottom[], __stack_top[], __stack_guard[], __stack_guard_end[];
 }
@@ -48,7 +49,8 @@ const char *initialize_mmu() {
                                {g.distributor_base, g.distributor_size, false},
                                {g.redistributor_base, g.redistributor_size, false},
                                extent(__exception_stacks_start, __exception_stacks_end),
-                               extent(__secondary_stacks_start, __secondary_stacks_end)};
+                               extent(__secondary_stacks_start, __secondary_stacks_end),
+                               extent(__task_stacks_start, __task_stacks_end)};
     if (!tables.initialize(memory))
         return "mmu root allocation failed";
     if (const auto *error = build_identity_map(tables, layout, memory_reservations())) {

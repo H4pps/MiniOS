@@ -1,6 +1,7 @@
 #include "mini_os/mmu.h"
 #include "mini_os/recovery.h"
 #include "mini_os/smp.h"
+#include "mini_os/tasks.h"
 namespace {
 bool valid(kernel::MemoryRange r) {
     return r.size != 0 && r.base < arch::identity_limit && r.size <= arch::identity_limit - r.base;
@@ -41,6 +42,14 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
          overlap(l.secondary_stacks, l.stack) || overlap(l.secondary_stacks, l.guard) ||
          (l.exception_stacks.size && overlap(l.secondary_stacks, l.exception_stacks))))
         return "mmu invalid secondary stacks";
+    if (l.task_stacks.size != 0 &&
+        (!aligned(l.task_stacks) || !contains(l.image, l.task_stacks) ||
+         l.task_stacks.size != kernel::task_capacity * arch::task_stack_stride ||
+         overlap(l.task_stacks, l.text) || overlap(l.task_stacks, l.rodata) ||
+         overlap(l.task_stacks, l.stack) || overlap(l.task_stacks, l.guard) ||
+         (l.exception_stacks.size && overlap(l.task_stacks, l.exception_stacks)) ||
+         (l.secondary_stacks.size && overlap(l.task_stacks, l.secondary_stacks))))
+        return "mmu invalid task stacks";
     for (size_t i = 0; i < reservations.count; ++i) {
         const auto r = reservations.ranges[i];
         if (r.size == 0 || r.size > UINT64_MAX - r.base ||
@@ -68,7 +77,9 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
              (page - l.exception_stacks.base) % arch::exception_stack_stride == 0) ||
             (page >= l.secondary_stacks.base &&
              page - l.secondary_stacks.base < l.secondary_stacks.size &&
-             (page - l.secondary_stacks.base) % arch::secondary_stack_stride == 0))
+             (page - l.secondary_stacks.base) % arch::secondary_stack_stride == 0) ||
+            (page >= l.task_stacks.base && page - l.task_stacks.base < l.task_stacks.size &&
+             (page - l.task_stacks.base) % arch::task_stack_stride == 0))
             continue;
         auto kind = arch::MappingKind::writable;
         if (page >= l.text.base && page - l.text.base < l.text.size)
