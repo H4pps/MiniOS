@@ -28,11 +28,11 @@ Boot, the editable serial monitor, device-tree discovery, CPU inspection,
 fatal diagnostics, GICv3 IRQ delivery, recurring timer ticks, physical page
 allocation, protected identity mappings, heap/reclamation, UART IRQ reception,
 controlled exception recovery with emergency stacks, CPU hierarchy/features,
-and parked secondary startup are verified natively and in ARM64/AMD64 containers. AMD64 uses local emulation. Each of the four foundation
+parked secondary startup and kernel tasks are verified natively and in ARM64/AMD64 containers. AMD64 uses local emulation. Each of the four foundation
 operations passed its complete checks before the next began.
 
-The current baseline passes **150 host tests per configuration** (debug,
-release, sanitizers) and **34 CTests per kernel preset** (debug/release) in all
+The current baseline passes **164 host tests per configuration** (debug,
+release, sanitizers) and **36 CTests per kernel preset** (debug/release) in all
 three environments. Remote CI verification remains pending.
 
 - [x] **Boot + linker script**
@@ -109,9 +109,11 @@ three environments. Remote CI verification remains pending.
   - [x] Verify PSCI startup, guarded private stacks, local GIC state and repeated SGI heartbeats on A53/A57 with one/four/eight CPUs; native/ARM64/AMD64 checks pass 150 host tests/configuration and 34 CTests/kernel preset.
   - [x] Decode architectural CPU feature registers.
   - [x] Verify hierarchy and raw/decoded features on A53 with one/four/eight CPUs and A57 with one/four; native/ARM64/AMD64 checks pass 140 host tests/configuration and 32 CTests/kernel preset.
-- [ ] **Scheduler**
-  - [ ] Separate generic scheduling policy from AArch64 context switching.
-  - [ ] Test policy on the host and verify multiple tasks under QEMU.
+- [x] **Scheduler**
+  - [x] Separate bounded round-robin policy from AArch64 context switching.
+  - [x] Add guarded worker stacks, timer preemption and explicit yield/sleep/exit; keep scheduling on the boot CPU.
+  - [x] Verify repeated three-worker batches, complete integer context, timed sleeps, exit/reaping, timer progress and monitor recovery on A53/A57 with one/four/eight CPUs.
+  - [x] Pass native, ARM64 Docker and emulated AMD64 checks: 164 host tests/configuration and 36 CTests/kernel preset.
 - [ ] **EL0 execution**
   - [ ] Implement EL0 entry and controlled return to the kernel.
   - [ ] Verify execution and exception handling across privilege levels.
@@ -129,5 +131,5 @@ three environments. Remote CI verification remains pending.
   - [x] Pass native, ARM64 Docker and emulated AMD64 checks: 127 host tests/configuration, 30 CTests/kernel preset.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap/UART-IRQ/recovery/performance/CPU-discovery/SMP tests, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap/UART-IRQ/recovery/performance/CPU-discovery/SMP/task tests, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.

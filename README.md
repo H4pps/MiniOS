@@ -166,13 +166,13 @@ Setup preserves its revision; the manifest baseline still pins dependencies.
 | `./scripts/dev.sh run` | Build and run the native host demo |
 | `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
 | `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
-| `./scripts/dev.sh kernel-test` | Build and run serial boot, UART exchanges, DTB discovery/rejection, monitor commands, fatal exceptions, IRQ delivery, timer progress, physical-page allocation, MMU protection, heap/reclamation, UART IRQs, ELF, and runner checks |
+| `./scripts/dev.sh kernel-test` | Build and run all kernel CTests, including task workloads, ELF inspection and runner failure checks |
 | `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
 | `./scripts/dev.sh format` | Format project C/C++ sources and headers |
 | `./scripts/dev.sh format-check` | Check formatting without edits |
 | `./scripts/dev.sh lint` | Build and analyze host translation units |
 | `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
-| `./scripts/dev.sh check` | Host checks, kernel analysis, debug and release boot, UART, DTB, monitor, exception, IRQ, timer, memory, MMU, heap, UART IRQ, recovery, and performance tests |
+| `./scripts/dev.sh check` | Run full host checks and kernel analysis/tests in both kernel presets |
 | `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
 
 Host commands default to `host-debug`; kernel commands default to
@@ -228,6 +228,7 @@ lowercase and case-sensitive:
 | `topology` | Show DT socket/cluster/core/thread locations without inferring missing hierarchy |
 | `features` | Decode boot CPU feature registers and retain their raw encodings |
 | `smp [test]` | Show actual online CPU state or verify secondary SGI heartbeats |
+| `tasks [test]` | Inspect boot-CPU scheduling or verify preemption, sleep and task cleanup |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
 | `mmu` | Inspect translation registers, identity mappings, and permission probes |
 | `mem [test\|reclaim]` | Inspect/test physical pages or reclaim reusable reservations |
@@ -295,8 +296,7 @@ platform converts newlines to CRLF.
 The receive path follows the [Arm PL011 manual](https://documentation-service.arm.com/static/5e8e36c2fd977155116a90b5)
 for FIFO availability, per-byte error flags, and error clearing. These assumptions come from the
 [QEMU 8.2 platform source](https://github.com/qemu/qemu/blob/v8.2.0/hw/arm/virt.c).
-EL2/EL3 transitions,
-and scheduling remain later milestones.
+EL2/EL3 transitions remain later work. Kernel tasks run at EL1 on the boot CPU.
 
 Interactive execution and tests share this fixed emulator configuration:
 
@@ -422,6 +422,34 @@ cover PSCI discovery/method failures, disabled and nonzero-boot slot mapping,
 capacity, affinity arithmetic, local GIC initialization and unmapped stack guards.
 Separate fake processes cover fragmented reports, incorrect counts/state/stacks,
 closed input, premature exit, stderr, deadlines and terminate/kill/reap cleanup.
+
+## Kernel tasks
+
+`tasks` reports boot-CPU scheduler state and cumulative switches, timer
+preemptions, yields, sleeps and completed tasks. `tasks test` runs three workers
+twice through integer-context probes and timed sleeps, checks private stack data,
+and reaps every worker before returning to the prompt. Invalid arguments print
+`usage: tasks [test]`.
+
+The bounded round-robin policy has eight slots: console task zero and up to seven
+workers. Timer ticks preempt runnable tasks; trusted kernel SVC sites implement
+explicit yield, sleep and exit. Sleep deadlines use the architectural physical
+counter and intervals from the existing 100 Hz timer. Sleeping or exited workers
+leave the console runnable. Each worker has a private 64 KiB stack with an
+unmapped 4 KiB guard. Switching preserves x0–x30, NZCV, SP, ELR and SPSR through
+the existing emergency-stack exception path. Scheduling policy is shared with
+host tests; assembly and register state stay in the AArch64 layer. Secondary CPUs
+remain parked and do not execute these tasks.
+
+`kernel.tasks` exercises repeated batches on A53 with one/four CPUs and A57 with
+one/eight, including 256 MiB for the eight-CPU scenario. It requires genuine
+preemption, successful sleep/exit accounting, preserved registers/flags/stack,
+reused slots, continuing timer progress and later recovery, SGI, SMP, heap and
+console commands. Host sanitizer tests cover policy capacity, fairness, modular
+deadlines, invalid transitions, context initialization/copy and exact SVC
+validation. Separate fake-process tests cover wrong accounting/context, partial
+reports, stalled ticks, stdin/exit failures, diagnostics and process cleanup.
+Priorities, task migration and floating-point context switching remain later work.
 
 The boot runner requires the exact resource confirmation followed by the exact
 complete boot success line on serial stdout within 10 seconds. Failure markers,
@@ -726,7 +754,7 @@ counters, partial output, stdin/exit failures, deadlines, diagnostics and cleanu
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance and CPU-discovery and SMP coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance, CPU-discovery, SMP and task coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -735,7 +763,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 150 host tests per configuration and
-34 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 164 host tests per configuration and
+36 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.
