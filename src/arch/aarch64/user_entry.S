@@ -1,0 +1,65 @@
+#include "mini_os/exception_offsets.h"
+.section .text.user_entry,"ax"
+.balign 4
+.global mini_os_enter_user
+.type mini_os_enter_user,%function
+// x0 = initial EL0 frame, x1 = owned parent frame, x2 = foreground DAIF.
+mini_os_enter_user:
+    stp x0,x1,[x1]
+    stp x2,x3,[x1,#16]
+    stp x4,x5,[x1,#32]
+    stp x6,x7,[x1,#48]
+    stp x8,x9,[x1,#64]
+    stp x10,x11,[x1,#80]
+    stp x12,x13,[x1,#96]
+    stp x14,x15,[x1,#112]
+    stp x16,x17,[x1,#128]
+    stp x18,x19,[x1,#144]
+    stp x20,x21,[x1,#160]
+    stp x22,x23,[x1,#176]
+    stp x24,x25,[x1,#192]
+    stp x26,x27,[x1,#208]
+    stp x28,x29,[x1,#224]
+    str x30,[x1,#240]
+    mov x3,sp
+    str x3,[x1,#MINI_OS_FRAME_ENTRY_SP]
+    mrs x3,sp_el0
+    str x3,[x1,#MINI_OS_FRAME_SP_EL0]
+    adr x3,mini_os_user_resume
+    str x3,[x1,#MINI_OS_FRAME_ELR]
+    mrs x3,nzcv
+    and x2,x2,#0x3c0
+    orr x3,x3,x2
+    add x3,x3,#5
+    str x3,[x1,#MINI_OS_FRAME_SPSR]
+    str xzr,[x1,#MINI_OS_FRAME_ESR]
+    str xzr,[x1,#MINI_OS_FRAME_FAR]
+    str xzr,[x1,#MINI_OS_FRAME_VECTOR]
+    mov x30,x0
+    ldr x0,[x30,#MINI_OS_FRAME_ELR]
+    msr elr_el1,x0
+    ldr x0,[x30,#MINI_OS_FRAME_SP_EL0]
+    msr sp_el0,x0
+    ldr x0,[x30,#MINI_OS_FRAME_SPSR]
+    msr spsr_el1,x0
+    ldp x0,x1,[x30]
+    ldp x2,x3,[x30,#16]
+    ldp x4,x5,[x30,#32]
+    ldp x6,x7,[x30,#48]
+    ldp x8,x9,[x30,#64]
+    ldp x10,x11,[x30,#80]
+    ldp x12,x13,[x30,#96]
+    ldp x14,x15,[x30,#112]
+    ldp x16,x17,[x30,#128]
+    ldp x18,x19,[x30,#144]
+    ldp x20,x21,[x30,#160]
+    ldp x22,x23,[x30,#176]
+    ldp x24,x25,[x30,#192]
+    ldp x26,x27,[x30,#208]
+    ldp x28,x29,[x30,#224]
+    ldr x30,[x30,#240]
+    eret
+.global mini_os_user_resume
+mini_os_user_resume:
+    ret
+.size mini_os_enter_user,.-mini_os_enter_user

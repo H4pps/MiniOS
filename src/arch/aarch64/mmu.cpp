@@ -28,6 +28,27 @@ bool activate_mmu(uint64_t root) {
     return (enabled.sctlr & 0x1005) == 1 && enabled.tcr == mmu_tcr && enabled.mair == mmu_mair &&
            enabled.ttbr0 == root;
 }
+bool switch_address_space(uint64_t root) {
+    if (root == 0 || root >= physical_limit || root % 4096 != 0 ||
+        (read_mmu_snapshot().sctlr & 0x1005) != 1)
+        return false;
+    const auto flags = mask_irq();
+    asm volatile("dsb sy\nmsr TTBR0_EL1,%0\nisb\ntlbi vmalle1\ndsb sy\nisb" ::"r"(root) : "memory");
+    const bool installed = read_mmu_snapshot().ttbr0 == root;
+    restore_irq(flags);
+    return installed;
+}
+Translation translate_user(uint64_t address, bool write) {
+    const auto flags = mask_irq();
+    uint64_t raw = 0;
+    // NOLINTNEXTLINE(bugprone-branch-clone)
+    if (write)
+        asm volatile("at s1e0w,%1\nisb\nmrs %0,PAR_EL1" : "=r"(raw) : "r"(address) : "memory");
+    else
+        asm volatile("at s1e0r,%1\nisb\nmrs %0,PAR_EL1" : "=r"(raw) : "r"(address) : "memory");
+    restore_irq(flags);
+    return {(raw & table_address_mask) | (address & 4095), raw, (raw & 1) == 0};
+}
 Translation translate(uint64_t address, bool write) {
     const auto flags = mask_irq();
     uint64_t raw = 0;
