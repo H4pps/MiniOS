@@ -71,11 +71,11 @@ if(MINI_OS_SANITIZERS)
   target_link_options(mini_os_options INTERFACE -fsanitize=address,undefined)
 endif()
 
-add_library(mini_os_cpu STATIC src/arch/aarch64/cpu_decode.cpp src/arch/aarch64/exception_decode.cpp src/arch/aarch64/page_tables.cpp src/arch/aarch64/recovery.cpp src/arch/aarch64/features_decode.cpp src/arch/aarch64/smp_decode.cpp src/arch/aarch64/task_context.cpp)
+add_library(mini_os_cpu STATIC src/arch/aarch64/cpu_decode.cpp src/arch/aarch64/exception_decode.cpp src/arch/aarch64/page_tables.cpp src/arch/aarch64/recovery.cpp src/arch/aarch64/features_decode.cpp src/arch/aarch64/smp_decode.cpp src/arch/aarch64/task_context.cpp src/arch/aarch64/user_context.cpp)
 target_include_directories(mini_os_cpu PUBLIC include)
 target_link_libraries(mini_os_cpu PRIVATE mini_os_options)
 
-add_library(mini_os_core STATIC src/kernel/alignment.c src/kernel/line_editor.cpp src/kernel/fdt.cpp src/kernel/text_writer.cpp src/kernel/monitor.cpp src/kernel/diagnostics.cpp src/kernel/interrupt.cpp src/kernel/timer.cpp src/kernel/memory.cpp src/kernel/heap.cpp src/kernel/serial_queue.cpp src/kernel/performance.cpp src/kernel/topology.cpp src/kernel/features.cpp src/kernel/smp.cpp src/kernel/scheduler.cpp)
+add_library(mini_os_core STATIC src/kernel/alignment.c src/kernel/line_editor.cpp src/kernel/fdt.cpp src/kernel/text_writer.cpp src/kernel/monitor.cpp src/kernel/diagnostics.cpp src/kernel/interrupt.cpp src/kernel/timer.cpp src/kernel/memory.cpp src/kernel/heap.cpp src/kernel/serial_queue.cpp src/kernel/performance.cpp src/kernel/topology.cpp src/kernel/features.cpp src/kernel/smp.cpp src/kernel/scheduler.cpp src/kernel/user.cpp)
 target_include_directories(mini_os_core PUBLIC include)
 target_link_libraries(mini_os_core PRIVATE mini_os_cpu mini_os_options)
 
