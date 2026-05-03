@@ -12,6 +12,8 @@ enum class CommandKind : uint8_t {
     features,
     smp,
     smp_test,
+    tasks,
+    tasks_test,
     echo,
     diag,
     perf,

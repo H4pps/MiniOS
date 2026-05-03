@@ -1,5 +1,7 @@
+#include "mini_os/monitor.h"
 #include "mini_os/tasks.h"
 #include <gtest/gtest.h>
+#include <string>
 TEST(SchedulerPolicy, InitializationCapacityAndProtectedConsole) {
     kernel::SchedulerPolicy p;
     size_t id = 0;
@@ -272,4 +274,17 @@ TEST(TaskProbe, ExactWorkingRegistersFlagsAndStack) {
     EXPECT_FALSE(arch::task_probe_valid(f, f.entry_sp + 16));
     f.spsr ^= 1ULL << 31;
     EXPECT_FALSE(arch::task_probe_valid(f, f.entry_sp));
+}
+TEST(SchedulerMonitor, ExactStatisticsAndStrictCommandArguments) {
+    std::string output;
+    kernel::TextWriter writer([](void *p, char c) { static_cast<std::string *>(p)->push_back(c); },
+                              &output);
+    kernel::render_scheduler(writer, {9, 3, 6, 6, 3, 0, 1, 0, 0});
+    EXPECT_EQ(output, "tasks: cpu=boot capacity=8 current=0 runnable=1 sleeping=0 exited=0 "
+                      "switches=9 preemptions=3 yields=6 sleeps=6 completed=3\n");
+    EXPECT_EQ(kernel::parse_command({"tasks", 5}).kind, kernel::CommandKind::tasks);
+    EXPECT_EQ(kernel::parse_command({" tasks test  ", 13}).kind, kernel::CommandKind::tasks_test);
+    output.clear();
+    kernel::render_text_command(writer, kernel::parse_command({"tasks test x", 12}));
+    EXPECT_EQ(output, "usage: tasks [test]\n");
 }
