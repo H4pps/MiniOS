@@ -16,6 +16,7 @@
 #include "mini_os/tasks.h"
 #include "mini_os/timer.h"
 #include "mini_os/topology.h"
+#include "mini_os/user.h"
 
 namespace {
 void put_character(void *, char character) { platform::early_putc(character); }
@@ -51,7 +52,10 @@ namespace kernel {
             platform::early_putc('\n');
             {
                 const auto command = parse_command({editor.text(), editor.length()});
-                if (command.kind == CommandKind::tasks || command.kind == CommandKind::tasks_test) {
+                if (command.kind == CommandKind::user || command.kind == CommandKind::user_test) {
+                    platform::run_user(writer, command.kind == CommandKind::user_test);
+                } else if (command.kind == CommandKind::tasks ||
+                           command.kind == CommandKind::tasks_test) {
                     if (command.kind == CommandKind::tasks_test)
                         scheduler_self_test();
                     render_tasks(writer);

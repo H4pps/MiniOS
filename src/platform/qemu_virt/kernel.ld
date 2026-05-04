@@ -77,3 +77,5 @@ ASSERT((__exception_stacks_start & 4095) == 0 && __exception_stacks_end - __exce
 ASSERT((__secondary_stacks_start & 4095) == 0 && __secondary_stacks_end - __secondary_stacks_start == 8 * 68K, "Expected eight guarded secondary stacks")
 
 ASSERT((__task_stacks_start & 4095) == 0 && __task_stacks_end - __task_stacks_start == 8 * 68K, "Expected eight guarded task stacks")
+
+ASSERT(mini_os_user_code_end - mini_os_user_code_begin <= 4096, "Builtin user code exceeds one page")

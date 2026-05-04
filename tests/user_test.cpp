@@ -1,6 +1,8 @@
+#include "mini_os/monitor.h"
 #include "mini_os/user.h"
 #include <array>
 #include <gtest/gtest.h>
+#include <string>
 TEST(UserMemory, OwnershipBoundsAliasesPermissionsAndReset) {
     kernel::UserMemory m;
     EXPECT_EQ(m.count(), 0U);
@@ -123,4 +125,34 @@ TEST(UserFrames, RejectBadAddressesModesSyndromesAndMasksWithoutMutation) {
         f.esr = syndrome;
         EXPECT_FALSE(arch::user_system_call(f));
     }
+}
+TEST(UserMonitor, StrictParsingAndExactFaultAndTimeoutReports) {
+    EXPECT_EQ(kernel::parse_command({"user", 4}).kind, kernel::CommandKind::user);
+    EXPECT_EQ(kernel::parse_command({" user test  ", 12}).kind, kernel::CommandKind::user_test);
+    std::string output;
+    kernel::TextWriter w([](void *p, char c) { static_cast<std::string *>(p)->push_back(c); },
+                         &output);
+    kernel::render_text_command(w, kernel::parse_command({"user test x", 11}));
+    EXPECT_EQ(output, "usage: user [test]\n");
+    output.clear();
+    kernel::UserResult r{};
+    r.name = "brk";
+    r.end = kernel::UserEnd::fault;
+    r.frame.vector = 8;
+    r.frame.esr = 0xf2000123;
+    r.frame.elr = 0x10000ac;
+    r.frame.spsr = 0x340;
+    r.frame.sp_el0 = 0x1005000;
+    kernel::render_user_result(w, r);
+    EXPECT_EQ(output, "user: case=brk result=fault status=0 el=0 vector=8 ec=0x3c iss=0x0000123 "
+                      "ELR=0x00000000010000ac FAR(raw)=0x0000000000000000 SPSR=0x0000000000000340 "
+                      "SP_EL0=0x0000000001005000 ticks=0 syscalls=0 writes=0\n");
+    output.clear();
+    r.name = "spin";
+    r.end = kernel::UserEnd::timed_out;
+    r.frame.vector = 9;
+    r.ticks = UINT64_MAX;
+    kernel::render_user_result(w, r);
+    EXPECT_NE(output.find("ec=0x00 iss=0x0000000"), std::string::npos);
+    EXPECT_NE(output.find("ticks=18446744073709551615"), std::string::npos);
 }

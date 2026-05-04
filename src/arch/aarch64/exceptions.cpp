@@ -6,6 +6,7 @@
 #include "mini_os/recovery.h"
 #include "mini_os/tasks.h"
 #include "mini_os/timer.h"
+#include "mini_os/user.h"
 
 extern "C" {
 extern const char mini_os_exception_vectors[];
@@ -85,9 +86,17 @@ bool recovery_self_test(FaultKind kind) {
 }
 } // namespace arch
 extern "C" arch::ExceptionFrame *mini_os_exception_handler(arch::ExceptionFrame *frame) {
-    if (frame->vector == 5 && platform::dispatch_interrupt()) {
-        return kernel::schedule_irq(*frame, platform::take_scheduler_tick());
+    if ((frame->vector == 5 || frame->vector == 9) && platform::dispatch_interrupt()) {
+        const auto tick = platform::take_scheduler_tick();
+        if (kernel::user_active()) {
+            if (auto *selected = kernel::handle_user_exception(*frame, tick))
+                return selected;
+        }
+        if (frame->vector == 5)
+            return kernel::schedule_irq(*frame, tick);
     }
+    if (auto *selected = kernel::handle_user_exception(*frame, false))
+        return selected;
     const auto operation = arch::decode_task_operation(*frame, arch::task_sites());
     if (operation != arch::TaskOperation::invalid)
         return kernel::schedule_trap(*frame, operation);
