@@ -229,6 +229,7 @@ lowercase and case-sensitive:
 | `features` | Decode boot CPU feature registers and retain their raw encodings |
 | `smp [test]` | Show actual online CPU state or verify secondary SGI heartbeats |
 | `tasks [test]` | Inspect boot-CPU scheduling or verify preemption, sleep and task cleanup |
+| `user [test]` | Execute an isolated EL0 example or verify controlled user faults |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
 | `mmu` | Inspect translation registers, identity mappings, and permission probes |
 | `mem [test\|reclaim]` | Inspect/test physical pages or reclaim reusable reservations |
@@ -451,6 +452,53 @@ validation. Separate fake-process tests cover wrong accounting/context, partial
 reports, stalled ticks, stdin/exit failures, diagnostics and process cleanup.
 Priorities, task migration and floating-point context switching remain later work.
 
+## EL0 execution
+
+`user` executes a small AArch64 program at EL0, writes `user: hello from EL0`,
+and exits with status 42. `user test` repeats the example and verifies breakpoint,
+undefined-instruction, unmapped-access, code-write, kernel-access, infinite-loop
+and invalid-user-stack cases. User faults terminate that run and return to the
+monitor. Deliberate kernel `fault` commands retain their fatal behavior.
+Invalid arguments print `usage: user [test]`.
+
+Each run owns its code, data, stack and page-table pages. Its separate TTBR0 root
+copies the immutable boot mappings with EL0 access denied, adds read-only user
+code with EL1 execution denied, and adds writable/non-executable user data and
+stack pages. An unmapped page guards the user stack. Hardware EL0 translation
+probes validate access before entry. The kernel root stays unchanged; secondary
+CPUs remain parked on it. This iteration serializes user execution on console
+task zero and requires no live worker tasks.
+
+The example ABI uses `svc #0` and x8 for the call number. Call 1 writes at most
+256 bytes from x0 with length x1 and returns the byte count in x0. It resolves
+only owned user regions through privileged physical aliases; invalid spans
+return -14, oversized writes return -22 and unknown calls return -38. Zero-length
+writes return zero. Call 2 exits with the unsigned status in x0. The example
+checks rejected calls, page-crossing bounds and writable data/stack contents.
+FP/SIMD and EL0 timer-register access remain disabled.
+
+Entry saves an owned EL1 parent context and selects SP_EL0. Lower-AArch64 IRQs
+continue timer and UART delivery; a timer deadline stops runaway user code after
+approximately 200 ms. Exit/fault/timeout handling selects only the saved parent
+frame, restores the kernel TTBR0 with barriers and TLB invalidation, and releases
+pages after that root is inactive. Invalid user stacks never become kernel
+exception stacks. Spin verification checks all 31 integer registers and NZCV
+across recurring IRQs. Reports retain the lower-EL vector, numeric syndrome,
+exact ELR, raw FAR, SPSR, SP_EL0 and call/tick counts. IRQ reports leave syndrome
+fields zero because ESR may be stale.
+
+`kernel.user` checks repeated runs and external page accounting on A53 with
+one/four CPUs and A57 with one/eight, using 256 MiB in the eight-CPU case. Every
+scenario requires restored privilege/masks/root/pages, a fresh prompt and later
+timer, SGI, recovery, SMP and heap commands. ELF inspection validates code-source
+bounds, transition symbols, fault-site offsets and actual instruction encodings.
+Host sanitizer fixtures cover private mapping copies, rollback/exhaustion,
+permissions, address arithmetic, owned regions, system calls, frame origin and
+exact reports. Separate fake-process tests cover fragmented/incorrect context,
+leaked accounting, incomplete output, exit/stdin failures, stderr, deadlines and
+terminate/kill/reap cleanup. Loading external ELF programs remains the next
+milestone.
+
 The boot runner requires the exact resource confirmation followed by the exact
 complete boot success line on serial stdout within 10 seconds. Failure markers,
 premature exit, missing tools/images, and timeouts
@@ -628,7 +676,8 @@ The design follows the [Arm memory-management guide](https://documentation-servi
 
 Text and vectors are read-only and executable. Read-only data and the DTB window
 are read-only and non-executable. Writable RAM, data, BSS, bitmap metadata, tables
-and stack are non-executable. All mappings deny EL0 access. RAM uses Normal
+and stack are non-executable. The boot identity mappings deny EL0 access; EL0
+examples use separately owned roots. RAM uses Normal
 non-cacheable attributes; UART and GIC use Device-nGnRnE. Null and unassigned
 addresses, no-map reservations and the stack guard stay unmapped. CPU caches
 remain disabled. Tables are immutable after activation; dynamic mappings remain
@@ -754,7 +803,7 @@ counters, partial output, stdin/exit failures, deadlines, diagnostics and cleanu
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance, CPU-discovery, SMP and task coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance, CPU-discovery, SMP, task and EL0 coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -763,7 +812,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 164 host tests per configuration and
-36 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 174 host tests per configuration and
+38 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.
