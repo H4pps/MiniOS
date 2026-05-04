@@ -102,6 +102,23 @@ def inspect(image, verbose=True):
     for kind in ("yield", "sleep", "exit", "probe"):
         site = symbols.get(f"mini_os_task_{kind}_site", 0)
         require(site % 4 == 0 and any(low <= site < site + 4 < high and flags == 5 for low, high, flags in loads), "Missing executable task SVC site")
+    user_first, user_last = symbols.get("mini_os_user_code_begin", 0), symbols.get("mini_os_user_code_end", 0)
+    require(user_first % 4 == 0 and 0 < user_last - user_first <= 4096 and
+            any(low <= user_first < user_last <= high and flags == 4 for low, high, flags in loads), "Invalid readonly user-code source")
+    for name in ("mini_os_enter_user", "mini_os_user_resume"):
+        address = symbols.get(name, 0)
+        require(address % 4 == 0 and any(low <= address < high and flags == 5 for low, high, flags in loads), "Missing executable user transition")
+    for kind, instruction in (("demo", 0xd4000001), ("brk", 0xd4202460), ("undef", 0),
+                              ("unmapped", 0xf9400001), ("readonly", 0xf900001f), ("kernel", 0xf9400001), ("spin", 0x14000000), ("stack", 0xf90003ff)):
+        address, site = symbols.get(f"mini_os_user_{kind}", 0), symbols.get(f"mini_os_user_{kind}_site", 0)
+        require(address % 4 == site % 4 == 0 and user_first <= address <= site < user_last, "Invalid user program entry/site")
+        found = False
+        for index in range(phcount):
+            kind_id, _, offset, virtual, _, filesz, _, _ = struct.unpack_from("<IIQQQQQQ", data, phoff + index * phsize)
+            if kind_id == 1 and virtual <= site and site + 4 <= virtual + filesz:
+                require(struct.unpack_from("<I", data, offset + site - virtual)[0] == instruction, "Incorrect user instruction encoding")
+                found = True
+        require(found, "User instruction is not file-backed")
     for kind in ("brk", "undef"):
         site=symbols.get(f"mini_os_recovery_{kind}_site",0);resume=symbols.get(f"mini_os_recovery_{kind}_resume",0)
         require(site%4==0 and resume==site+4 and any(low<=site<resume<high and flags==5 for low,high,flags in loads), "Invalid scoped recovery site")

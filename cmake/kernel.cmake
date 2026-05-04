@@ -106,11 +106,14 @@ if(BUILD_TESTING)
   add_test(NAME kernel.tasks
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
       task-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
-  set_tests_properties(kernel.boot kernel.uart kernel.fdt kernel.monitor kernel.exception kernel.irq kernel.timer kernel.memory kernel.mmu kernel.heap kernel.uart_irq kernel.recovery kernel.performance kernel.cpu_discovery kernel.smp kernel.tasks PROPERTIES TIMEOUT 20)
+  add_test(NAME kernel.user
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
+      user-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
+  set_tests_properties(kernel.boot kernel.uart kernel.fdt kernel.monitor kernel.exception kernel.irq kernel.timer kernel.memory kernel.mmu kernel.heap kernel.uart_irq kernel.recovery kernel.performance kernel.cpu_discovery kernel.smp kernel.tasks kernel.user PROPERTIES TIMEOUT 20)
   add_test(NAME kernel.elf
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/verify_elf.py"
       "$<TARGET_FILE:mini_os_kernel>")
-  foreach(protocol IN ITEMS boot uart fdt monitor fault irq timer memory mmu mmu_fault heap fdt_edit uart_irq recovery stack_fault performance cpu_discovery smp task)
+  foreach(protocol IN ITEMS boot uart fdt monitor fault irq timer memory mmu mmu_fault heap fdt_edit uart_irq recovery stack_fault performance cpu_discovery smp task user)
     add_test(NAME tools.${protocol}_runner
       COMMAND "${Python3_EXECUTABLE}" -m unittest discover
         -s "${PROJECT_SOURCE_DIR}/tests/python" -p "test_${protocol}_runner.py")

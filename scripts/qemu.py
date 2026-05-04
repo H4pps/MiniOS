@@ -1016,9 +1016,85 @@ def task_exchanges(memory=128):
 def tasks_test(command,timeout=10):
     return scenario_test(command,timeout,(("cortex-a53",1,128),("cortex-a53",4,128),("cortex-a57",1,128),("cortex-a57",8,256)),task_exchanges)
 
+
+def user_report_matcher(symbols, suite):
+    names = ('demo','brk','undef','unmapped','readonly','kernel','spin','stack') if suite else ('demo',)
+    def match(data):
+        end=data.find(PROMPT)
+        if end<0:return None
+        body=data[:end+len(PROMPT)]
+        prefix=b'\r\nuser: hello from EL0\r\n'
+        if not body.startswith(prefix):raise ValueError('Missing EL0 write response')
+        rest=body[len(prefix):]
+        for index,name in enumerate(names):
+            report=re.match(rb'user: case=([a-z]+) result=([a-z]+) status=([0-9]+) el=0 vector=([0-9]+) ec=0x([0-9a-f]{2}) iss=0x([0-9a-f]{7}) ELR=0x([0-9a-f]{16}) FAR\(raw\)=0x([0-9a-f]{16}) SPSR=0x([0-9a-f]{16}) SP_EL0=0x([0-9a-f]{16}) ticks=([0-9]+) syscalls=([0-9]+) writes=([0-9]+)\r\n',rest)
+            if report is None:raise ValueError('Incorrect or incomplete user report')
+            actual_name,outcome=report[1].decode(),report[2].decode()
+            status,vector=int(report[3]),int(report[4])
+            ec,iss,elr,far,spsr,stack=(int(report[i],16) for i in range(5,11))
+            ticks,calls,writes=(int(report[i]) for i in range(11,14))
+            site=0x1000000+symbols['mini_os_user_'+name+'_site']-symbols['mini_os_user_code_begin']
+            expected=('exit',42,8,0x15,0,site+4,7,1) if index==0 else (
+                ('timeout',0,9,0,0,site,0,0) if name=='spin' else
+                ('fault',0,8,0x3c if name=='brk' else 0 if name=='undef' else 0x24,
+                 0x123 if name=='brk' else 0 if name=='undef' else 0x4f if name=='readonly' else 0xf if name=='kernel' else 0x47 if name=='stack' else 7,site,0,0))
+            if actual_name!=name or (outcome,status,vector,ec,iss,elr,calls,writes)!=expected:
+                raise ValueError('Incorrect user origin, syndrome, site, status or syscall accounting')
+            if stack!=(0x1003000 if name=='stack' else 0x1005000) or spsr&0x3df!=0x340:
+                raise ValueError('Incorrect saved EL0 state or stack')
+            if name=='spin' and (ticks<10 or spsr&0xf0000000!=0xa0000000):
+                raise ValueError('Runaway user did not receive timer IRQs with preserved flags')
+            expected_far={'unmapped':0x1003000,'readonly':0x1000000,'kernel':symbols['__image_start'],'stack':0x1003000}.get(name)
+            if expected_far is not None and far!=expected_far:
+                raise ValueError('Incorrect user fault address')
+            rest=rest[report.end():]
+        terminal=b'user: returned el=1 daif=0x0000000000000340 root-restored=yes pages-restored=yes\r\n'+f'user: test OK cases={len(names)}\r\n'.encode()+PROMPT
+        if rest!=terminal:raise ValueError('User return did not restore kernel root, pages or prompt')
+        return len(body)
+    return match
+
+
+def user_exchanges(memory,symbols):
+    yield next(uart_exchanges(memory))
+    baseline=[]
+    def accounting(data):
+        end=data.find(PROMPT)
+        if end<0:return None
+        body=data[:end+len(PROMPT)]
+        report=re.fullmatch(rb'\r\nmem: base=0x([0-9a-f]{16}) size=0x([0-9a-f]{16}) pages=([0-9]+) reserved=([0-9]+) allocated=([0-9]+) free=([0-9]+) metadata=0x([0-9a-f]{16})\r\nmini-os> ',body)
+        if report is None:raise ValueError('Incorrect user memory accounting response')
+        values=tuple(int(value,16 if i in (0,1,6) else 10) for i,value in enumerate(report.groups()))
+        base,size,pages,reserved,allocated,free,metadata=values
+        if base!=0x40000000 or size!=memory*1024*1024 or pages!=reserved+allocated+free or pages!=size//4096:
+            raise ValueError('Invalid user memory baseline')
+        if baseline and baseline[0]!=values:raise ValueError('User execution leaked physical pages')
+        baseline[:]=[values]
+        return len(body)
+    yield from command_exchange('user memory baseline',b'mem',accounting)
+    yield from command_exchange('EL0 example',b'user',user_report_matcher(symbols,False))
+    for _ in range(2):
+        yield from command_exchange('EL0 isolation and faults',b'user test  ',user_report_matcher(symbols,True))
+        yield from command_exchange('user page restoration',b'mem',accounting)
+    for payload,response in (
+        (b'user x',b'\r\nusage: user [test]\r\n'+PROMPT),
+        (b'user test x',b'\r\nusage: user [test]\r\n'+PROMPT),
+        (b'help',b'\r\n'+HELP+PROMPT),
+        (b'recover brk',b'\r\nrecover: brk OK count=1\r\n'+PROMPT),
+        (b'smp test',b'\r\nsmp: test OK\r\n'+PROMPT),
+        (b'heap test',b'\r\nheap: test OK\r\n'+PROMPT),
+        (b'echo user recovered',b'\r\necho: user recovered\r\n'+PROMPT),
+    ):yield from command_exchange('user monitor recovery',payload,response)
+    progress=timer_exchanges(memory);next(progress)
+    yield from progress
+
+
+def user_test(command,timeout=10,symbols=None):
+    if symbols is None:symbols=inspect(Path(command[command.index('-kernel')+1]),verbose=False)
+    return scenario_test(command,timeout,(("cortex-a53",1,128),("cortex-a53",4,128),("cortex-a57",1,128),("cortex-a57",8,256)),lambda memory:user_exchanges(memory,symbols))
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test", "task-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test", "task-test", "user-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -1032,7 +1108,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test, "task-test": tasks_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test, "task-test": tasks_test, "user-test": user_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
