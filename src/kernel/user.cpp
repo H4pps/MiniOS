@@ -85,11 +85,11 @@ void render_user_result(TextWriter &w, const UserResult &r) {
     w.decimal(r.status);
     w.write(" el=0 vector=");
     w.decimal(r.frame.vector);
-    const auto synchronous = r.frame.vector == 8;
+    const auto decoded = arch::decode_exception(r.frame);
     w.write(" ec=");
-    w.hex(synchronous ? (r.frame.esr >> 26) & 63 : 0, {2});
+    w.hex(decoded.ec, {2});
     w.write(" iss=");
-    w.hex(synchronous ? r.frame.esr & 0x1ffffff : 0, {7});
+    w.hex(decoded.iss, {7});
     w.write(" ELR=");
     w.hex(r.frame.elr);
     w.write(" FAR(raw)=");

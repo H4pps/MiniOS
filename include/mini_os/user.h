@@ -64,6 +64,10 @@ struct UserStart {
 bool prepare_user_frame(ExceptionFrame &frame, const UserStart &start);
 bool lower_user_frame(const ExceptionFrame &frame);
 bool user_system_call(const ExceptionFrame &frame);
+bool user_irq_frame(const ExceptionFrame &frame);
+struct UserProgram;
+bool validate_user_example(const kernel::UserResult &result, const UserProgram &program,
+                           size_t index, uint64_t argument);
 void enter_user(const ExceptionFrame &frame, ExceptionFrame &parent, uint64_t parent_flags);
 uint64_t stack_pointer();
 bool prepare_user_execution();
