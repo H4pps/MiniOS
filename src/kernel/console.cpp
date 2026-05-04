@@ -1,5 +1,6 @@
 #include "mini_os/console.h"
 
+#include "mini_os/elf.h"
 #include "mini_os/exception.h"
 #include "mini_os/features.h"
 #include "mini_os/heap.h"
@@ -52,7 +53,10 @@ namespace kernel {
             platform::early_putc('\n');
             {
                 const auto command = parse_command({editor.text(), editor.length()});
-                if (command.kind == CommandKind::user || command.kind == CommandKind::user_test) {
+                if (command.kind == CommandKind::elf || command.kind == CommandKind::elf_test) {
+                    platform::run_elf(writer, command.kind == CommandKind::elf_test);
+                } else if (command.kind == CommandKind::user ||
+                           command.kind == CommandKind::user_test) {
                     platform::run_user(writer, command.kind == CommandKind::user_test);
                 } else if (command.kind == CommandKind::tasks ||
                            command.kind == CommandKind::tasks_test) {

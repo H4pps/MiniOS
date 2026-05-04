@@ -49,17 +49,19 @@ Command parse_command(TextSpan line) {
     } else if ((command.name.equals("irq") || command.name.equals("mem") ||
                 command.name.equals("heap") || command.name.equals("perf") ||
                 command.name.equals("smp") || command.name.equals("tasks") ||
-                command.name.equals("user"))) {
+                command.name.equals("user") || command.name.equals("elf"))) {
         auto argument = command.arguments;
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
             --argument.size;
         }
         const bool heap = command.name.equals("heap"), memory = command.name.equals("mem"),
                    perf = command.name.equals("perf"), smp = command.name.equals("smp"),
-                   tasks = command.name.equals("tasks"), user = command.name.equals("user");
+                   tasks = command.name.equals("tasks"), user = command.name.equals("user"),
+                   elf = command.name.equals("elf");
         if (argument.size == 0)
             command.kind = heap     ? CommandKind::heap
                            : memory ? CommandKind::mem
+                           : elf    ? CommandKind::elf
                            : user   ? CommandKind::user
                            : tasks  ? CommandKind::tasks
                            : smp    ? CommandKind::smp
@@ -68,6 +70,7 @@ Command parse_command(TextSpan line) {
         else if (argument.equals("test"))
             command.kind = heap     ? CommandKind::heap_test
                            : memory ? CommandKind::mem_test
+                           : elf    ? CommandKind::elf_test
                            : user   ? CommandKind::user_test
                            : tasks  ? CommandKind::tasks_test
                            : smp    ? CommandKind::smp_test
@@ -123,6 +126,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::tasks_test:
     case CommandKind::user:
     case CommandKind::user_test:
+    case CommandKind::elf:
+    case CommandKind::elf_test:
     case CommandKind::empty:
     case CommandKind::mmu:
     case CommandKind::fault_unmapped:
@@ -153,7 +158,8 @@ void render_text_command(TextWriter &writer, const Command &command) {
             " perf [test]  measure a bounded memory workload\n  topology     show DT CPU "
             "hierarchy\n  features     show boot CPU capabilities\n  smp [test]   inspect online "
             "CPUs or test secondary heartbeats\n  tasks [test]  inspect scheduling or verify "
-            "kernel tasks\n  user [test]  execute an isolated EL0 example or verify faults\n");
+            "kernel tasks\n  user [test]  execute an isolated EL0 example or verify faults\n  elf "
+            "[test]   load and execute a compiled user ELF\n");
         return;
     case CommandKind::echo:
         writer.write("echo: ");
@@ -171,7 +177,7 @@ void render_text_command(TextWriter &writer, const Command &command) {
         if ((command.name.equals("irq") || command.name.equals("mem") ||
              command.name.equals("heap") || command.name.equals("perf") ||
              command.name.equals("smp") || command.name.equals("tasks") ||
-             command.name.equals("user"))) {
+             command.name.equals("user") || command.name.equals("elf"))) {
             writer.write(command.name.equals("mem") ? " [test|reclaim]" : " [test]");
         }
         if (command.name.equals("recover"))

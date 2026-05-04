@@ -43,7 +43,8 @@ TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
         "measure a bounded memory workload\n  topology     show DT CPU hierarchy\n  features     "
         "show boot CPU capabilities\n  smp [test]   inspect online CPUs or test secondary "
         "heartbeats\n  tasks [test]  inspect scheduling or verify kernel tasks\n  user [test]  "
-        "execute an isolated EL0 example or verify faults\n");
+        "execute an isolated EL0 example or verify faults\n  elf [test]   load and execute a "
+        "compiled user ELF\n");
     EXPECT_EQ(response("help x"), "usage: help\n");
     EXPECT_EQ(response("cpu x"), "usage: cpu\n");
     EXPECT_EQ(response("CPU x"), "mini-os: unknown command: CPU\n");

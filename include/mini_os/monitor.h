@@ -16,6 +16,8 @@ enum class CommandKind : uint8_t {
     tasks_test,
     user,
     user_test,
+    elf,
+    elf_test,
     echo,
     diag,
     perf,

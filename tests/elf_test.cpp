@@ -343,7 +343,26 @@ TEST(ElfLoader, AllocationInitializationAndPartialMappingFailuresRollBack) {
     EXPECT_EQ(loaded.load(view, missing), elf::Error::bad_header);
     EXPECT_EQ(m.allocations, 0U);
 }
-
+TEST(ElfMonitor, ExactRenderingAndCommandUsage) {
+    Image image;
+    elf::View view;
+    ASSERT_EQ(view.open(image.span(), arch::user_elf_policy()), elf::Error::none);
+    std::string output;
+    kernel::TextWriter writer([](void *p, char c) { static_cast<std::string *>(p)->push_back(c); },
+                              &output);
+    elf::render(writer, view);
+    EXPECT_EQ(output, "elf: entry=0x0000000001000000 segments=2 pages=3\n"
+                      "elf[0]: va=0x0000000001000000 file=16 memory=32 permissions=r-x\n"
+                      "elf[1]: va=0x0000000001006000 file=4 memory=8192 permissions=rw-\n");
+    EXPECT_EQ(kernel::parse_command({"elf", 3}).kind, kernel::CommandKind::elf);
+    EXPECT_EQ(kernel::parse_command({" elf test  ", 11}).kind, kernel::CommandKind::elf_test);
+    for (const std::string command : {"elf x", "elf test x", "elf testtest"}) {
+        output.clear();
+        kernel::render_text_command(writer,
+                                    kernel::parse_command({command.data(), command.size()}));
+        EXPECT_EQ(output, "usage: elf [test]\n");
+    }
+}
 TEST(ElfView, MutatedHeaderAndProgramBytesRemainBoundedUnderSanitizers) {
     const Image original;
     for (size_t offset = 0; offset < 176; ++offset) {
