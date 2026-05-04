@@ -20,14 +20,23 @@ uint64_t stack_pointer() {
     return value;
 }
 bool prepare_user_execution() {
-    uint64_t features = 0, cpacr = 0;
+    uint64_t features = 0, cpacr = 0, sctlr = 0;
     asm volatile("mrs %0,ID_AA64PFR0_EL1" : "=r"(features));
     if ((features & 15) != 1 && (features & 15) != 2)
         return false;
+    asm volatile("mrs %0,SCTLR_EL1" : "=r"(sctlr));
+    // Keep EL0 DAIF manipulation unavailable so the timer deadline cannot be masked.
+    sctlr &= ~(1ULL << 9);
+    asm volatile("msr SCTLR_EL1,%0\nisb" ::"r"(sctlr) : "memory");
     asm volatile("mrs %0,CPACR_EL1" : "=r"(cpacr));
     cpacr &= ~((3ULL << 20) | (3ULL << 16));
     asm volatile("msr CPACR_EL1,%0\nmsr CNTKCTL_EL1,xzr\nisb" ::"r"(cpacr) : "memory");
-    return true;
+    uint64_t installed = 0, counter_control = 0;
+    asm volatile("mrs %0,CPACR_EL1" : "=r"(installed));
+    asm volatile("mrs %0,CNTKCTL_EL1" : "=r"(counter_control));
+    asm volatile("mrs %0,SCTLR_EL1" : "=r"(sctlr));
+    return (installed & ((3ULL << 20) | (3ULL << 16))) == 0 && counter_control == 0 &&
+           (sctlr & (1ULL << 9)) == 0;
 }
 void enter_user(const ExceptionFrame &frame, ExceptionFrame &parent, uint64_t flags) {
     mini_os_enter_user(&frame, &parent, flags);
