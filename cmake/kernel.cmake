@@ -9,6 +9,21 @@ target_link_libraries(mini_os_cpu PRIVATE mini_os_kernel_options)
 target_link_libraries(mini_os_pl011 PRIVATE mini_os_kernel_options)
 target_link_libraries(mini_os_resources PRIVATE mini_os_kernel_options)
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_executable(mini_os_user_demo src/user/aarch64/start.S src/user/demo.cpp)
+target_include_directories(mini_os_user_demo PRIVATE include)
+target_link_libraries(mini_os_user_demo PRIVATE mini_os_options mini_os_kernel_options)
+set_target_properties(mini_os_user_demo PROPERTIES OUTPUT_NAME user-demo SUFFIX .elf)
+set(USER_LINKER_SCRIPT "${PROJECT_SOURCE_DIR}/src/user/aarch64/user.ld")
+set_property(TARGET mini_os_user_demo APPEND PROPERTY LINK_DEPENDS "${USER_LINKER_SCRIPT}")
+target_link_options(mini_os_user_demo PRIVATE "--ld-path=${CMAKE_LINKER}" -nostdlib -static
+  "LINKER:-T,${USER_LINKER_SCRIPT}" "LINKER:--gc-sections,--no-undefined,-z,max-page-size=4096")
+set(USER_EMBEDDED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/user_image.cpp")
+add_custom_command(OUTPUT "${USER_EMBEDDED_SOURCE}"
+  COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/embed_elf.py"
+    "$<TARGET_FILE:mini_os_user_demo>" "${USER_EMBEDDED_SOURCE}"
+  DEPENDS mini_os_user_demo "${PROJECT_SOURCE_DIR}/scripts/embed_elf.py" VERBATIM)
+
 add_executable(mini_os_kernel
   src/arch/aarch64/boot/start.S
   src/arch/aarch64/cpu.cpp
@@ -43,7 +58,8 @@ add_executable(mini_os_kernel
   src/platform/qemu_virt/console.cpp
   src/platform/qemu_virt/boot_resources.cpp
   src/kernel/boot.cpp
-  src/kernel/console.cpp)
+  src/kernel/console.cpp
+  "${USER_EMBEDDED_SOURCE}")
 set_target_properties(mini_os_kernel PROPERTIES OUTPUT_NAME kernel SUFFIX .elf)
 target_link_libraries(mini_os_kernel PRIVATE
   mini_os_core mini_os_pl011 mini_os_resources mini_os_gic mini_os_options mini_os_kernel_options)
@@ -56,7 +72,6 @@ target_link_options(mini_os_kernel PRIVATE
   "LINKER:--gc-sections,--no-undefined,-z,max-page-size=4096")
 
 if(BUILD_TESTING)
-  find_package(Python3 REQUIRED COMPONENTS Interpreter)
   find_program(MINI_OS_QEMU NAMES qemu-system-aarch64 REQUIRED)
   add_test(NAME kernel.boot
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
