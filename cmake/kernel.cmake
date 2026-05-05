@@ -103,6 +103,9 @@ if(BUILD_TESTING)
   add_test(NAME kernel.mmu
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
       mmu-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
+  add_test(NAME kernel.mmu_fault
+    COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
+      mmu-fault-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
   add_test(NAME kernel.heap
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/qemu.py"
       heap-test --image "$<TARGET_FILE:mini_os_kernel>" --qemu "${MINI_OS_QEMU}")
@@ -134,7 +137,7 @@ if(BUILD_TESTING)
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/verify_user_elf.py"
       "$<TARGET_FILE:mini_os_kernel>" "$<TARGET_FILE:mini_os_user_demo>")
   set_tests_properties(kernel.elf_loader kernel.user_elf PROPERTIES TIMEOUT 20)
-  set_tests_properties(kernel.boot kernel.uart kernel.fdt kernel.monitor kernel.exception kernel.irq kernel.timer kernel.memory kernel.mmu kernel.heap kernel.uart_irq kernel.recovery kernel.performance kernel.cpu_discovery kernel.smp kernel.tasks kernel.user PROPERTIES TIMEOUT 20)
+  set_tests_properties(kernel.boot kernel.uart kernel.fdt kernel.monitor kernel.exception kernel.irq kernel.timer kernel.memory kernel.mmu kernel.mmu_fault kernel.heap kernel.uart_irq kernel.recovery kernel.performance kernel.cpu_discovery kernel.smp kernel.tasks kernel.user PROPERTIES TIMEOUT 20)
   add_test(NAME kernel.elf
     COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/verify_elf.py"
       "$<TARGET_FILE:mini_os_kernel>")

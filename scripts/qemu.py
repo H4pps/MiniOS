@@ -754,15 +754,15 @@ def mmu_exchanges(memory=128):
     yield from exchanges
 
 
-def mmu_test(command,timeout=10,symbols=None):
-    deadline=time.monotonic()+timeout
+def mmu_test(command,timeout=10):
+    # Normal translation checks and deliberate fatal faults have independent
+    # deadlines so every CPU/RAM scenario fits under AMD64 Docker emulation.
     scenarios=tuple((model,count,memory) for model,count,_ in CPU_SCENARIOS for memory in (128,256))
-    normal=scenario_test(command,timeout,scenarios,mmu_exchanges)
-    if not normal.success: return normal
-    remaining=deadline-time.monotonic()
-    if remaining<=0: return BootResult(False,"Timed out before MMU faults",normal.stdout,normal.stderr,normal.pid)
-    faults=fault_test(command,remaining,symbols,("unmapped","readonly"))
-    return BootResult(faults.success,faults.reason,normal.stdout+faults.stdout,normal.stderr+faults.stderr,faults.pid)
+    return scenario_test(command,timeout,scenarios,mmu_exchanges)
+
+
+def mmu_fault_test(command,timeout=10,symbols=None):
+    return fault_test(command,timeout,symbols,("unmapped","readonly"))
 
 
 def recovery_exchanges(memory=128,symbols=None):
@@ -1161,7 +1161,7 @@ def elf_test(command,timeout=10,image=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test", "task-test", "user-test", "elf-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "mmu-fault-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test", "task-test", "user-test", "elf-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -1175,7 +1175,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test, "task-test": tasks_test, "user-test": user_test, "elf-test": elf_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "mmu-fault-test": mmu_fault_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test, "task-test": tasks_test, "user-test": user_test, "elf-test": elf_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:

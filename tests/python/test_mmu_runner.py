@@ -37,18 +37,18 @@ CONSOLE = 'timer_ticks=0\n' + test_memory_runner.CONSOLE.replace("if command == 
 class MmuRunnerTests(unittest.TestCase):
     def run_fake(self,body,timeout=7):
         return test_boot_runner.BootRunnerTests.run_fake(self,body,timeout,
-            runner=functools.partial(qemu.mmu_test,symbols=SYMBOLS),
+            runner=qemu.mmu_test,
             command_args=('-cpu','cortex-a53','-smp','1','-m','128M'))
     def test_fragmentation_both_models_ram_sizes_and_all_children_reaped(self):
         processes=[];popen=subprocess.Popen
         def launch(*args,**kwargs):
             process=popen(*args,**kwargs);processes.append(process);return process
         with patch.object(qemu.subprocess,'Popen',side_effect=launch):result=self.run_fake(CONSOLE)
-        self.assertTrue(result.success,result.reason);self.assertEqual(len(processes),10)
+        self.assertTrue(result.success,result.reason);self.assertEqual(len(processes),6)
         for process in processes:
             with self.assertRaises(ChildProcessError):os.waitpid(process.pid,os.WNOHANG)
             with self.assertRaises(ProcessLookupError):os.kill(process.pid,0)
-    def test_incorrect_state_permissions_and_fault_context(self):
+    def test_incorrect_state_and_permissions(self):
         for old,new in (('00cd0839','00cd0838'),('text-write=denied','text-write=allowed')):
             result=self.run_fake(CONSOLE.replace(old,new));self.assertFalse(result.success)
     def test_incomplete_report_closed_input_timeout_and_diagnostics(self):
