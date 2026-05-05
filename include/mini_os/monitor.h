@@ -18,6 +18,8 @@ enum class CommandKind : uint8_t {
     user_test,
     elf,
     elf_test,
+    virtio,
+    virtio_test,
     echo,
     diag,
     perf,

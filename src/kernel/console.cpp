@@ -18,6 +18,7 @@
 #include "mini_os/timer.h"
 #include "mini_os/topology.h"
 #include "mini_os/user.h"
+#include "mini_os/virtio_resources.h"
 
 namespace {
 void put_character(void *, char character) { platform::early_putc(character); }
@@ -53,7 +54,11 @@ namespace kernel {
             platform::early_putc('\n');
             {
                 const auto command = parse_command({editor.text(), editor.length()});
-                if (command.kind == CommandKind::elf || command.kind == CommandKind::elf_test) {
+                if (command.kind == CommandKind::virtio ||
+                    command.kind == CommandKind::virtio_test) {
+                    platform::render_virtio(writer, command.kind == CommandKind::virtio_test);
+                } else if (command.kind == CommandKind::elf ||
+                           command.kind == CommandKind::elf_test) {
                     platform::run_elf(writer, command.kind == CommandKind::elf_test);
                 } else if (command.kind == CommandKind::user ||
                            command.kind == CommandKind::user_test) {

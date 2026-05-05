@@ -2,6 +2,7 @@
 #include "mini_os/drivers/virtio.h"
 #include "mini_os/mmu.h"
 #include "mini_os/monitor.h"
+#include "mini_os/virtio.h"
 #include "mini_os/virtio_resources.h"
 #include <array>
 #include <gtest/gtest.h>
@@ -426,7 +427,37 @@ TEST_F(VirtioDiscovery, OneCellWidthsThirtyTwoTransportBoundaryAndMalformedPageE
     resources.count = 0;
     EXPECT_FALSE(platform::virtio_pages(resources, nullptr, count));
 }
-
+TEST(VirtioMonitor, ExactStatisticsChecksumAndStrictCommands) {
+    EXPECT_EQ(kernel::parse_command({"virtio", 6}).kind, kernel::CommandKind::virtio);
+    EXPECT_EQ(kernel::parse_command({" virtio test  ", 14}).kind, kernel::CommandKind::virtio_test);
+    std::string output;
+    kernel::TextWriter writer([](void *p, char c) { static_cast<std::string *>(p)->push_back(c); },
+                              &output);
+    kernel::VirtioReport report{32, 0, 0, 0, 0, false, {}};
+    kernel::render_virtio(writer, report);
+    EXPECT_EQ(output, "virtio: transports=32 devices=0 block=no\n");
+    output.clear();
+    report.devices = 1;
+    report.base = 0xa003e00;
+    report.interrupt = 79;
+    report.version = 2;
+    report.block = true;
+    report.stats = {64, UINT64_MAX, 12, 17, true, true, false, Error::none};
+    kernel::render_virtio(writer, report);
+    EXPECT_EQ(output,
+              "virtio: transports=32 devices=1 block=yes base=0x000000000a003e00 interrupt=79 "
+              "version=2 sectors=64 readonly=yes queue=8 submitted=18446744073709551615 "
+              "completed=12 interrupts=17 ready=yes error=none\n");
+    for (const std::string command : {"virtio x", "virtio test x"}) {
+        output.clear();
+        kernel::render_text_command(writer,
+                                    kernel::parse_command({command.data(), command.size()}));
+        EXPECT_EQ(output, "usage: virtio [test]\n");
+    }
+    const uint8_t hello[] = {'h', 'e', 'l', 'l', 'o'};
+    EXPECT_EQ(kernel::block_checksum(hello, 5), 0x4f9f2cabU);
+    EXPECT_EQ(kernel::block_checksum(nullptr, 0), 2166136261U);
+}
 TEST_F(VirtioBlock, ConfigurationShrinkAndUnstableCapacityTerminatePendingRequest) {
     ready();
     ASSERT_EQ(block.read(63), Error::none);
