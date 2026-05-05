@@ -28,6 +28,7 @@ namespace platform {
 const char *initialize_interrupts();
 bool register_interrupt(uint32_t id, kernel::IrqHandler handler, void *context, bool edge);
 bool dispatch_interrupt();
+bool disable_interrupt(uint32_t id);
 kernel::IrqStats irq_stats();
 bool irq_self_test();
 } // namespace platform

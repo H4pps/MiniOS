@@ -69,6 +69,8 @@ struct MappingLayout {
     kernel::MemoryRange exception_stacks{};
     kernel::MemoryRange secondary_stacks{};
     kernel::MemoryRange task_stacks{};
+    const kernel::MemoryRange *extra_devices = nullptr;
+    size_t extra_device_count = 0;
 };
 const char *build_identity_map(arch::PageTables &tables, const MappingLayout &layout,
                                const kernel::ReservationSet &reservations);

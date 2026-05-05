@@ -59,6 +59,7 @@ bool register_interrupt(uint32_t id, kernel::IrqHandler handler, void *context, 
     return id < controller.limit && drivers::gicv3::configure(controller, id, edge) &&
            handlers.set(id, handler, context) && drivers::gicv3::enable(controller, id, true);
 }
+bool disable_interrupt(uint32_t id) { return drivers::gicv3::enable(controller, id, false); }
 bool dispatch_interrupt() {
     const uint32_t id = arch::acknowledge_irq();
     const auto result = handlers.dispatch(id);

@@ -378,3 +378,52 @@ TEST_F(Tables, CopiesSealedKernelRootsAndRejectsUnreadableProvidersWithoutLeaks)
     for (size_t i = 0; i < used.size(); ++i)
         EXPECT_EQ(used[i], i < 3);
 }
+TEST_F(Tables, ExtraMmioPagesHaveDeviceEl1PermissionsAndCopyIntoPrivateRoots) {
+    const kernel::MemoryRange extra[] = {{0xa000000, 0x4000, false}};
+    layout.extra_devices = extra;
+    layout.extra_device_count = 1;
+    kernel::ReservationSet reservations;
+    ASSERT_TRUE(tables.initialize(memory));
+    ASSERT_EQ(platform::build_identity_map(tables, layout, reservations), nullptr);
+    for (uint64_t offset = 0; offset < 0x4000; offset += 4096) {
+        const auto descriptor = tables.descriptor(0xa000000 + offset);
+        EXPECT_EQ(descriptor & arch::table_address_mask, 0xa000000 + offset);
+        EXPECT_EQ((descriptor >> 2) & 7, 1U);
+        EXPECT_EQ(descriptor & 0x40, 0U);
+        EXPECT_NE(descriptor & (1ULL << 53), 0U);
+        EXPECT_NE(descriptor & (1ULL << 54), 0U);
+    }
+    tables.seal();
+    arch::PageTables copied;
+    ASSERT_TRUE(copied.initialize_copy(tables, memory));
+    EXPECT_EQ(copied.descriptor(0xa003000), tables.descriptor(0xa003000));
+    copied.discard();
+}
+TEST_F(Tables, ExtraDeviceBoundsPageAliasesAndNoMapExclusionsRejectBeforeMapping) {
+    kernel::MemoryRange extra{0xa000000, 0x4000, false};
+    layout.extra_devices = &extra;
+    layout.extra_device_count = 1;
+    kernel::ReservationSet reservations;
+    ASSERT_TRUE(tables.initialize(memory));
+    const auto valid = extra;
+    for (auto invalid : {kernel::MemoryRange{0, 4096, false},
+                         {1, 4096, false},
+                         {0xa000000, 1, false},
+                         {0x9000000, 4096, false},
+                         {0x40000000, 4096, false},
+                         {arch::identity_limit, 4096, false}}) {
+        extra = invalid;
+        EXPECT_NE(platform::build_identity_map(tables, layout, reservations), nullptr);
+        EXPECT_EQ(tables.descriptor(0x40000000), 0U);
+    }
+    extra = valid;
+    ASSERT_TRUE(reservations.add({0xa001001, 1, true}));
+    EXPECT_NE(platform::build_identity_map(tables, layout, reservations), nullptr);
+    reservations.count = 0;
+    layout.extra_device_count = 33;
+    EXPECT_NE(platform::build_identity_map(tables, layout, reservations), nullptr);
+    layout.extra_device_count = 1;
+    layout.extra_devices = nullptr;
+    EXPECT_NE(platform::build_identity_map(tables, layout, reservations), nullptr);
+    tables.discard();
+}

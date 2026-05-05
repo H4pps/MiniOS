@@ -3,7 +3,11 @@
 
 #include <stdint.h>
 
+namespace drivers::virtio {
+enum class Order : uint8_t;
+}
 namespace arch {
+void dma_barrier(drivers::virtio::Order order);
 struct CpuSnapshot {
     uint64_t midr;
     uint64_t mpidr;

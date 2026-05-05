@@ -19,7 +19,8 @@ bool overlap(kernel::MemoryRange a, kernel::MemoryRange b) {
 namespace platform {
 const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
                                const kernel::ReservationSet &reservations) {
-    if (reservations.count > 32 || !aligned(l.ram) || !aligned(l.dtb) || !aligned(l.image) ||
+    if (l.extra_device_count > 32 || (l.extra_device_count != 0 && l.extra_devices == nullptr) ||
+        reservations.count > 32 || !aligned(l.ram) || !aligned(l.dtb) || !aligned(l.image) ||
         !aligned(l.text) || !aligned(l.rodata) || !aligned(l.stack) || !aligned(l.guard) ||
         l.guard.size != 4096 || l.guard.base + l.guard.size != l.stack.base ||
         !contains(l.ram, l.dtb) || !contains(l.ram, l.image) || !contains(l.image, l.text) ||
@@ -59,8 +60,13 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
     }
     // Device mappings must not reintroduce an unmapped RAM guard/hole.
     // Check complete MMIO pages because permissions operate at page granularity.
-    for (unsigned i = 0; i < 3; ++i) {
-        const auto device = i == 0 ? l.uart : i == 1 ? l.distributor : l.redistributors;
+    for (size_t i = 0; i < 3 + l.extra_device_count; ++i) {
+        const auto device = i == 0   ? l.uart
+                            : i == 1 ? l.distributor
+                            : i == 2 ? l.redistributors
+                                     : l.extra_devices[i - 3];
+        if (!valid(device) || device.no_map || device.reusable)
+            return "mmu invalid device extent";
         const auto first = device.base & ~4095ULL;
         const auto end = (device.base + device.size + 4095) & ~4095ULL;
         const kernel::MemoryRange pages{first, end - first, false};
@@ -69,6 +75,19 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
         for (size_t j = 0; j < reservations.count; ++j)
             if (reservations.ranges[j].no_map && overlap(pages, reservations.ranges[j]))
                 return "mmu device overlaps no-map page";
+    }
+    for (size_t i = 0; i < l.extra_device_count; ++i) {
+        if (!aligned(l.extra_devices[i]))
+            return "mmu invalid extra device alignment";
+        for (size_t j = 0; j < i + 3; ++j) {
+            const auto d = j == 0   ? l.uart
+                           : j == 1 ? l.distributor
+                           : j == 2 ? l.redistributors
+                                    : l.extra_devices[j - 3];
+            const auto first = d.base & ~4095ULL, end = (d.base + d.size + 4095) & ~4095ULL;
+            if (overlap(l.extra_devices[i], {first, end - first, false}))
+                return "mmu overlapping device pages";
+        }
     }
     for (uint64_t page = l.ram.base; page < l.ram.base + l.ram.size; page += 4096) {
         if (page == 0 || page == l.guard.base || reservations.excludes(page) ||
@@ -90,8 +109,13 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
         if (!tables.map({page, 4096, false}, kind))
             return "mmu RAM mapping failed";
     }
-    for (unsigned i = 0; i < 3; ++i) {
-        const auto device = i == 0 ? l.uart : i == 1 ? l.distributor : l.redistributors;
+    for (size_t i = 0; i < 3 + l.extra_device_count; ++i) {
+        const auto device = i == 0   ? l.uart
+                            : i == 1 ? l.distributor
+                            : i == 2 ? l.redistributors
+                                     : l.extra_devices[i - 3];
+        if (!valid(device) || device.no_map || device.reusable)
+            return "mmu invalid device extent";
         const auto first = device.base & ~4095ULL;
         const auto end = (device.base + device.size + 4095) & ~4095ULL;
         if (first == 0 || end > arch::identity_limit ||

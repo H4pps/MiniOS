@@ -27,6 +27,8 @@ add_custom_command(OUTPUT "${USER_EMBEDDED_SOURCE}"
 
 add_executable(mini_os_kernel
   src/arch/aarch64/boot/start.S
+  src/arch/aarch64/dma.cpp
+  src/platform/qemu_virt/virtio.cpp
   src/arch/aarch64/cpu.cpp
   src/arch/aarch64/smp.cpp
   src/arch/aarch64/boot/secondary.S

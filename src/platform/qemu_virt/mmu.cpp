@@ -2,6 +2,7 @@
 #include "mini_os/gic_resources.h"
 #include "mini_os/platform.h"
 #include "mini_os/resources.h"
+#include "mini_os/virtio_resources.h"
 // NOLINTBEGIN(bugprone-reserved-identifier)
 extern "C" {
 extern const uint8_t __dtb_start[], __dtb_end[], __image_start[], __image_end[];
@@ -38,6 +39,10 @@ namespace platform {
 const char *initialize_mmu() {
     const auto &r = platform_resources();
     const auto &g = gic_resources();
+    kernel::MemoryRange extra[virtio_capacity];
+    size_t extra_count = 0;
+    if (!virtio_pages(virtio_resources(), extra, extra_count))
+        return "mmu invalid VirtIO pages";
     const MappingLayout layout{{r.ram_base, r.ram_size, false},
                                extent(__dtb_start, __dtb_end),
                                extent(__image_start, __image_end),
@@ -50,7 +55,9 @@ const char *initialize_mmu() {
                                {g.redistributor_base, g.redistributor_size, false},
                                extent(__exception_stacks_start, __exception_stacks_end),
                                extent(__secondary_stacks_start, __secondary_stacks_end),
-                               extent(__task_stacks_start, __task_stacks_end)};
+                               extent(__task_stacks_start, __task_stacks_end),
+                               extra,
+                               extra_count};
     if (!tables.initialize(memory))
         return "mmu root allocation failed";
     if (const auto *error = build_identity_map(tables, layout, memory_reservations())) {
