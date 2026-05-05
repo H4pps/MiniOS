@@ -2,6 +2,7 @@
 #include "mini_os/drivers/virtio.h"
 #include "mini_os/mmu.h"
 #include "mini_os/monitor.h"
+#include "mini_os/virtio_resources.h"
 #include <array>
 #include <gtest/gtest.h>
 #include <string>
@@ -76,6 +77,39 @@ class VirtioBlock : public testing::Test {
         request.status = status;
         regs[0x60 / 4] = 1;
         block.interrupt();
+    }
+};
+class VirtioDiscovery : public testing::Test {
+  protected:
+    fixture::Node root{"",
+                       {{"#address-cells", fixture::cells({2})},
+                        {"#size-cells", fixture::cells({2})},
+                        {"interrupt-parent", fixture::cells({10})}},
+                       {{"intc",
+                         {{"compatible", fixture::strings({"arm,gic-v3"})},
+                          {"phandle", fixture::cells({10})},
+                          {"#interrupt-cells", fixture::cells({3})},
+                          {"interrupt-controller", {}}},
+                         {}},
+                        {"virtio@a000000",
+                         {{"compatible", fixture::strings({"vendor,transport", "virtio,mmio"})},
+                          {"reg", fixture::cells({0, 0x0a000000, 0, 0x200})},
+                          {"interrupts", fixture::cells({0, 16, 1})}},
+                         {}},
+                        {"virtio@a000200",
+                         {{"compatible", fixture::strings({"virtio,mmio"})},
+                          {"reg", fixture::cells({0, 0x0a000200, 0, 0x200})},
+                          {"interrupts", fixture::cells({0, 17, 4})}},
+                         {}}}};
+    platform::VirtioResources resources{};
+    const char *discover() {
+        const auto bytes = fixture::blob(root);
+        fdt::View view;
+        EXPECT_EQ(fdt::View::open({bytes.data(), bytes.size()}, view), fdt::Error::none);
+        platform::GicResources gic{};
+        gic.phandle = 10;
+        EXPECT_EQ(view.find_node(fdt::String::literal("/intc"), gic.node), fdt::Error::none);
+        return platform::discover_virtio(view, gic, resources);
     }
 };
 } // namespace
@@ -288,8 +322,110 @@ TEST_F(VirtioBlock, BadUsedElementsStatusesAndUnsolicitedCompletionsAreBounded) 
     complete();
     EXPECT_EQ(block.result(), Error::none);
 }
-
-
+TEST_F(VirtioDiscovery, SelectedGicCellsAliasesStatusOrderingAndPageCoalescing) {
+    ASSERT_EQ(discover(), nullptr);
+    ASSERT_EQ(resources.count, 2U);
+    EXPECT_EQ(resources.transports[0].interrupt, 48U);
+    EXPECT_TRUE(resources.transports[0].edge);
+    EXPECT_FALSE(resources.transports[1].edge);
+    kernel::MemoryRange pages[platform::virtio_capacity];
+    size_t count = 0;
+    ASSERT_TRUE(platform::virtio_pages(resources, pages, count));
+    ASSERT_EQ(count, 1U);
+    EXPECT_EQ(pages[0].base, 0xa000000U);
+    EXPECT_EQ(pages[0].size, 4096U);
+    std::swap(root.children[1], root.children[2]);
+    ASSERT_EQ(discover(), nullptr);
+    EXPECT_EQ(resources.transports[0].base, 0xa000000U);
+    root.children[1].properties[2] = {"interrupts-extended", fixture::cells({10, 0, 17, 4})};
+    ASSERT_EQ(discover(), nullptr);
+    root.children[1].properties.push_back({"status", fixture::strings({"disabled"})});
+    ASSERT_EQ(discover(), nullptr);
+    EXPECT_EQ(resources.count, 1U);
+    root.children.resize(1);
+    ASSERT_EQ(discover(), nullptr);
+    EXPECT_EQ(resources.count, 0U);
+}
+TEST_F(VirtioDiscovery, RejectMalformedRegistersInterruptsDuplicateResourcesAndTranslations) {
+    const auto valid = root;
+    for (const auto &bytes :
+         {fixture::cells({0, 0, 0, 512}), fixture::cells({0, 0xa000001, 0, 512}),
+          fixture::cells({0, 0xa000000, 0, 0x107}),
+          fixture::cells({UINT32_MAX, UINT32_MAX, 0, 512}),
+          fixture::cells({0, 0xa000000, 0, 512, 0, 0xb000000, 0, 512})}) {
+        root = valid;
+        fixture::property(root.children[1], "reg") = bytes;
+        EXPECT_NE(discover(), nullptr);
+        EXPECT_EQ(resources.count, 0U);
+    }
+    for (const auto &bytes : {fixture::cells({1, 16, 1}), fixture::cells({0, 988, 1}),
+                              fixture::cells({0, 16, 2}), fixture::cells({0, 16})}) {
+        root = valid;
+        fixture::property(root.children[1], "interrupts") = bytes;
+        EXPECT_NE(discover(), nullptr);
+    }
+    for (auto name : {"iommus", "dma-ranges", "iommu-map"}) {
+        root = valid;
+        root.children[1].properties.push_back({name, {}});
+        EXPECT_NE(discover(), nullptr);
+    }
+    root = valid;
+    root.children[1].properties.push_back(root.children[1].properties[1]);
+    EXPECT_NE(discover(), nullptr);
+    root = valid;
+    root.children[2].properties[1] = root.children[1].properties[1];
+    EXPECT_NE(discover(), nullptr);
+    root = valid;
+    root.children[2].properties[2] = root.children[1].properties[2];
+    EXPECT_NE(discover(), nullptr);
+    root = valid;
+    fixture::property(root, "interrupt-parent") = fixture::cells({11});
+    EXPECT_NE(discover(), nullptr);
+    root = valid;
+    root.children[1].properties.push_back({"interrupts-extended", fixture::cells({10, 0, 16, 1})});
+    EXPECT_NE(discover(), nullptr);
+    root = valid;
+    root.children[0].properties.push_back({"phandle", fixture::cells({10})});
+    EXPECT_NE(discover(), nullptr);
+    root = valid;
+    root.children.push_back({"bus", {}, {root.children[1]}});
+    root.children.erase(root.children.begin() + 1);
+    EXPECT_NE(discover(), nullptr);
+}
+TEST_F(VirtioDiscovery, OneCellWidthsThirtyTwoTransportBoundaryAndMalformedPageExtents) {
+    root.children.resize(1);
+    for (uint32_t i = 0; i < 32; ++i)
+        root.children.push_back({"virtio@" + std::to_string(i),
+                                 {{"compatible", fixture::strings({"virtio,mmio"})},
+                                  {"reg", fixture::cells({0, 0xa000000 + i * 512, 0, 512})},
+                                  {"interrupts", fixture::cells({0, 16 + i, 1})}},
+                                 {}});
+    ASSERT_EQ(discover(), nullptr);
+    EXPECT_EQ(resources.count, 32U);
+    kernel::MemoryRange pages[32];
+    size_t count = 0;
+    ASSERT_TRUE(platform::virtio_pages(resources, pages, count));
+    EXPECT_EQ(count, 1U);
+    EXPECT_EQ(pages[0].size, 16384U);
+    root.children.push_back(root.children.back());
+    EXPECT_NE(discover(), nullptr);
+    EXPECT_EQ(resources.count, 0U);
+    root.children.resize(3);
+    fixture::property(root, "#address-cells") = fixture::cells({1});
+    fixture::property(root, "#size-cells") = fixture::cells({1});
+    for (size_t i = 1; i < 3; ++i)
+        fixture::property(root.children[i], "reg") =
+            fixture::cells({0xa000000 + static_cast<uint32_t>(i) * 512, 512});
+    ASSERT_EQ(discover(), nullptr);
+    EXPECT_EQ(resources.count, 2U);
+    resources.transports[0].base = UINT64_MAX - 511;
+    EXPECT_FALSE(platform::virtio_pages(resources, pages, count));
+    EXPECT_EQ(count, 0U);
+    resources.count = 33;
+    EXPECT_FALSE(platform::virtio_pages(resources, pages, count));
+    resources.count = 0;
+    EXPECT_FALSE(platform::virtio_pages(resources, nullptr, count));
+}
 
 TEST_F(VirtioBlock, ConfigurationShrinkAndUnstableCapacityTerminatePendingRequest) {
     ready();
@@ -309,7 +445,19 @@ TEST_F(VirtioBlock, ConfigurationShrinkAndUnstableCapacityTerminatePendingReques
     EXPECT_EQ(generation_reads, 32U);
     EXPECT_TRUE(block.stop());
 }
-
+TEST_F(VirtioDiscovery, RejectRootDmaTranslationMalformedCompatibilityAndCellCounts) {
+    const auto valid = root;
+    root.properties.push_back({"dma-ranges", {}});
+    EXPECT_NE(discover(), nullptr);
+    root = valid;
+    fixture::property(root, "#address-cells") = fixture::cells({3});
+    EXPECT_NE(discover(), nullptr);
+    root = valid;
+    fixture::property(root.children[1], "compatible") =
+        fixture::Bytes{'v', 'i', 'r', 't', 'i', 'o', ',', 'm', 'm', 'i', 'o'};
+    EXPECT_NE(discover(), nullptr);
+    EXPECT_EQ(resources.count, 0U);
+}
 TEST_F(VirtioBlock, TransportEncodesCompletePhysicalAddressesWithoutArchitectureSpecificLimits) {
     dma.queue_address = 1ULL << 40;
     dma.request_address = dma.queue_address + 4096;
