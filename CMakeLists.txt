@@ -91,6 +91,10 @@ add_library(mini_os_gic STATIC src/drivers/interrupt/gicv3/gicv3.cpp)
 target_include_directories(mini_os_gic PUBLIC include)
 target_link_libraries(mini_os_gic PRIVATE mini_os_options)
 
+add_library(mini_os_virtio STATIC src/drivers/virtio/block.cpp)
+target_include_directories(mini_os_virtio PUBLIC include)
+target_link_libraries(mini_os_virtio PRIVATE mini_os_options)
+
 include(CTest)
 if(MINI_OS_BUILD_MODE STREQUAL "host")
   include(cmake/host.cmake)
