@@ -230,6 +230,7 @@ lowercase and case-sensitive:
 | `smp [test]` | Show actual online CPU state or verify secondary SGI heartbeats |
 | `tasks [test]` | Inspect boot-CPU scheduling or verify preemption, sleep and task cleanup |
 | `user [test]` | Execute an isolated EL0 example or verify controlled user faults |
+| `elf [test]` | Load the compiled user ELF or verify repeated execution and rejection |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
 | `mmu` | Inspect translation registers, identity mappings, and permission probes |
 | `mem [test\|reclaim]` | Inspect/test physical pages or reclaim reusable reservations |
@@ -475,7 +476,8 @@ only owned user regions through privileged physical aliases; invalid spans
 return -14, oversized writes return -22 and unknown calls return -38. Zero-length
 writes return zero. Call 2 exits with the unsigned status in x0. The example
 checks rejected calls, page-crossing bounds and writable data/stack contents.
-FP/SIMD and EL0 timer-register access remain disabled.
+FP/SIMD and EL0 timer-register access remain disabled. EL0 DAIF writes are
+trapped so user code cannot mask the timer deadline.
 
 Entry saves an owned EL1 parent context and selects SP_EL0. Lower-AArch64 IRQs
 continue timer and UART delivery; a timer deadline stops runaway user code after
@@ -496,8 +498,48 @@ Host sanitizer fixtures cover private mapping copies, rollback/exhaustion,
 permissions, address arithmetic, owned regions, system calls, frame origin and
 exact reports. Separate fake-process tests cover fragmented/incorrect context,
 leaked accounting, incomplete output, exit/stdin failures, stderr, deadlines and
-terminate/kill/reap cleanup. Loading external ELF programs remains the next
-milestone.
+terminate/kill/reap cleanup.
+
+## ELF loading
+
+`elf` loads the embedded `user-demo.elf` into a fresh private address space and
+executes its compiled C++ entry at EL0. The program verifies initialized data,
+zeroed BSS and writable stack/data, prints `elf: user OK` through the bounded
+write syscall, and exits with status 42. `elf test` executes it twice with fresh
+pages, rejects a corrupted header, and reports restored kernel mappings and
+page accounting. Invalid arguments print `usage: elf [test]`.
+
+The existing kernel presets build `src/user/demo.cpp` and its AArch64 startup
+with the same freestanding cross-compiler and LLD. A separate user linker script
+produces RX text, read-only constants and writable/non-executable data/BSS.
+Python embeds the resulting file without another mandatory tool. This iteration
+loads that build-time image; filesystem loading, dynamic linking, relocations,
+TLS and argument/environment setup remain unsupported.
+
+The allocation-free parser reads ELF64 little-endian fields bytewise, accepts
+static AArch64 `ET_EXEC`, and validates bounded header/section/program tables,
+file spans, alignment, arithmetic, permissions and an executable aligned entry.
+It rejects overlapping segment pages, writable executable segments and runtime
+initialization requirements. Inputs are limited to 1 MiB, four load segments and
+64 image pages. User image addresses lie in `[0x01000000, 0x02000000)`, excluding
+the fixed stack guard and stack. The physical-address field never determines
+allocation: each segment gets freshly owned RAM, explicitly zeroed in full before
+copying validated file bytes. Allocation, initialization and partial-map failures
+unwind ownership. Cleanup occurs only after the private root is inactive.
+
+Execution shares the established EL0 entry, syscall checks, timer deadline,
+fault termination and privileged return path. Hardware translation probes check
+every mapped user page before entry. `kernel.elf_loader` verifies repeated runs,
+exact entry/segment permissions and exit site, malformed-image rejection, external
+page accounting and subsequent monitor/timer/SGI/recovery/SMP/heap commands on
+A53 with one/four CPUs and A57 with one/eight, using 128/256 MiB RAM. Each action
+keeps one ten-second deadline and a twenty-second CTest timeout.
+`kernel.user_elf` independently inspects the compiled image, static symbols/BSS
+and SVC instruction, and compares its exact kernel embedding. Host sanitizer
+fixtures cover every truncation, unaligned bytes, mutated tables, malformed
+sections, overflow, capacities, padding/BSS and transactional rollback. Separate
+fake-process tests cover fragmented or wrong reports, leaks, incomplete output,
+stdin/exit failures, deadlines, stderr draining and child reaping.
 
 The boot runner requires the exact resource confirmation followed by the exact
 complete boot success line on serial stdout within 10 seconds. Failure markers,
@@ -803,7 +845,7 @@ counters, partial output, stdin/exit failures, deadlines, diagnostics and cleanu
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance, CPU-discovery, SMP, task and EL0 coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance, CPU-discovery, SMP, task, EL0 and ELF-loading coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -812,7 +854,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 174 host tests per configuration and
-38 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 185 host tests per configuration and
+42 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.

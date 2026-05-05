@@ -28,12 +28,12 @@ Boot, the editable serial monitor, device-tree discovery, CPU inspection,
 fatal diagnostics, GICv3 IRQ delivery, recurring timer ticks, physical page
 allocation, protected identity mappings, heap/reclamation, UART IRQ reception,
 controlled exception recovery with emergency stacks, CPU hierarchy/features,
-parked secondary startup, kernel tasks and EL0 execution are verified natively
+parked secondary startup, kernel tasks, EL0 execution and ELF loading are verified natively
 and in ARM64/AMD64 containers. AMD64 uses local emulation. Each of the four
 foundation operations passed its complete checks before the next began.
 
-The current baseline passes **174 host tests per configuration** (debug,
-release, sanitizers) and **38 CTests per kernel preset** (debug/release) in all
+The current baseline passes **185 host tests per configuration** (debug,
+release, sanitizers) and **42 CTests per kernel preset** (debug/release) in all
 three environments. Remote CI verification remains pending.
 
 - [x] **Boot + linker script**
@@ -119,9 +119,11 @@ three environments. Remote CI verification remains pending.
   - [x] Add privately owned address spaces, bounded write/exit calls and an owned EL1 return context.
   - [x] Verify execution, user code/kernel permissions, controlled faults, invalid user stacks, timer deadlines and restored accounting across privilege levels.
   - [x] Pass native, ARM64 Docker and emulated AMD64 checks on A53/A57 with one/four/eight CPUs and 128/256 MiB: 174 host tests/configuration and 38 CTests/kernel preset.
-- [ ] **ELF loader**
-  - [ ] Add ELF parsing, validation, and loading.
-  - [ ] Test invalid images on the host and execute a valid image under QEMU.
+- [x] **ELF loader**
+  - [x] Parse bounded static AArch64 ELF images and load owned zero-filled segments transactionally.
+  - [x] Build and embed a compiled user program; preserve separate RX/RO/RW permissions, guarded stacks and the existing EL0 execution path.
+  - [x] Test malformed/truncated/mutated images, BSS, capacity and rollback under host sanitizers; verify repeated QEMU execution, exact context and page restoration.
+  - [x] Pass native, ARM64 Docker and emulated AMD64 checks: 185 host tests/configuration and 42 CTests/kernel preset.
 - [ ] **VirtIO**
   - [ ] Implement the first required VirtIO device with platform-discovered resources.
   - [ ] Verify device initialization and a complete I/O operation under QEMU.
@@ -133,5 +135,5 @@ three environments. Remote CI verification remains pending.
   - [x] Pass native, ARM64 Docker and emulated AMD64 checks: 127 host tests/configuration, 30 CTests/kernel preset.
 - [ ] **CI**
   - [x] Add a separate Ubuntu / LLVM 18 kernel job alongside `check-host`.
-  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap/UART-IRQ/recovery/performance/CPU-discovery/SMP/task/EL0 tests, ELF inspection, and serial-output checks with timeouts.
+  - [x] Automate debug/release QEMU boot/UART/DTB/monitor/exception/IRQ/timer/memory/MMU/heap/UART-IRQ/recovery/performance/CPU-discovery/SMP/task/EL0/ELF-loading tests, ELF inspection, and serial-output checks with timeouts.
   - [ ] Configure a GitHub remote and verify the complete workflow in an actual Actions run.
