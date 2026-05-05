@@ -1092,9 +1092,76 @@ def user_test(command,timeout=10,symbols=None):
     if symbols is None:symbols=inspect(Path(command[command.index('-kernel')+1]),verbose=False)
     return scenario_test(command,timeout,(("cortex-a53",1,128),("cortex-a53",4,128),("cortex-a57",1,128),("cortex-a57",8,256)),lambda memory:user_exchanges(memory,symbols))
 
+def elf_report_matcher(image, suite):
+    segments=image['segments']
+    prefix=(f"\r\nelf: entry=0x{image['entry']:016x} segments={len(segments)} pages={sum(((s[0]+s[3]+4095)//4096-s[0]//4096) for s in segments)}\r\n"+
+        ''.join(f"elf[{i}]: va=0x{s[0]:016x} file={s[2]} memory={s[3]} permissions={ {5:'r-x',4:'r--',6:'rw-'}[s[4]]}\r\n" for i,s in enumerate(segments))).encode()
+    runs=2 if suite else 1
+    def match(data):
+        end=data.find(PROMPT)
+        if end<0:return None
+        body=data[:end+len(PROMPT)]
+        if not body.startswith(prefix):raise ValueError('Incorrect ELF entry, segment extents or permissions')
+        rest=body[len(prefix):]
+        for _ in range(runs):
+            marker=b'elf: user OK\r\n'
+            if not rest.startswith(marker):raise ValueError('Compiled ELF data, BSS, stack or syscall check failed')
+            rest=rest[len(marker):]
+            report=re.match(rb'user: case=elf result=exit status=42 el=0 vector=8 ec=0x15 iss=0x0000000 ELR=0x([0-9a-f]{16}) FAR\(raw\)=0x([0-9a-f]{16}) SPSR=0x([0-9a-f]{16}) SP_EL0=0x([0-9a-f]{16}) ticks=([0-9]+) syscalls=2 writes=1\r\n',rest)
+            if report is None:raise ValueError('Incorrect or incomplete compiled ELF context')
+            elr,_,state,stack=(int(report[i],16) for i in range(1,5))
+            if elr!=image['exit_site']+4 or state&0x3df!=0x340 or stack!=0x1005000:
+                raise ValueError('Incorrect compiled ELF exit site, execution state or stack')
+            rest=rest[report.end():]
+        terminal=(b'elf: rejected bad-magic\r\n' if suite else b'')+b'elf: returned el=1 daif=0x0000000000000340 root-restored=yes pages-restored=yes\r\n'+f'elf: test OK runs={runs}\r\n'.encode()+PROMPT
+        if rest!=terminal:raise ValueError('ELF rejection or kernel root/page/prompt restoration failed')
+        return len(body)
+    return match
+
+
+def elf_exchanges(memory,image):
+    yield next(uart_exchanges(memory))
+    baseline=[]
+    def accounting(data):
+        end=data.find(PROMPT)
+        if end<0:return None
+        body=data[:end+len(PROMPT)]
+        report=re.fullmatch(rb'\r\nmem: base=0x([0-9a-f]{16}) size=0x([0-9a-f]{16}) pages=([0-9]+) reserved=([0-9]+) allocated=([0-9]+) free=([0-9]+) metadata=0x([0-9a-f]{16})\r\nmini-os> ',body)
+        if report is None:raise ValueError('Incorrect ELF memory accounting response')
+        values=tuple(int(value,16 if i in (0,1,6) else 10) for i,value in enumerate(report.groups()))
+        base,size,pages,reserved,allocated,free,_=values
+        if base!=0x40000000 or size!=memory*1024*1024 or pages!=reserved+allocated+free or pages!=size//4096:
+            raise ValueError('Invalid ELF memory baseline')
+        if baseline and baseline[0]!=values:raise ValueError('ELF execution leaked physical pages')
+        baseline[:]=[values]
+        return len(body)
+    yield from command_exchange('ELF memory baseline',b'mem',accounting)
+    yield from command_exchange('compiled ELF program',b'elf',elf_report_matcher(image,False))
+    for _ in range(2):
+        yield from command_exchange('repeated ELF execution and rejection',b'elf test  ',elf_report_matcher(image,True))
+        yield from command_exchange('ELF page restoration',b'mem',accounting)
+    for payload,response in (
+        (b'elf x',b'\r\nusage: elf [test]\r\n'+PROMPT),
+        (b'elf test x',b'\r\nusage: elf [test]\r\n'+PROMPT),
+        (b'help',b'\r\n'+HELP+PROMPT),
+        (b'recover brk',b'\r\nrecover: brk OK count=1\r\n'+PROMPT),
+        (b'smp test',b'\r\nsmp: test OK\r\n'+PROMPT),
+        (b'heap test',b'\r\nheap: test OK\r\n'+PROMPT),
+        (b'echo elf recovered',b'\r\necho: elf recovered\r\n'+PROMPT),
+    ):yield from command_exchange('ELF monitor recovery',payload,response)
+    progress=timer_exchanges(memory);next(progress)
+    yield from progress
+
+
+def elf_test(command,timeout=10,image=None):
+    if image is None:
+        from verify_user_elf import embedded
+        image=embedded(Path(command[command.index('-kernel')+1]))
+    return scenario_test(command,timeout,(("cortex-a53",1,128),("cortex-a53",4,128),("cortex-a57",1,128),("cortex-a57",8,256)),lambda memory:elf_exchanges(memory,image))
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test", "task-test", "user-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test", "task-test", "user-test", "elf-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -1108,7 +1175,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test, "task-test": tasks_test, "user-test": user_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test, "task-test": tasks_test, "user-test": user_test, "elf-test": elf_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
