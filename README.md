@@ -231,6 +231,7 @@ lowercase and case-sensitive:
 | `tasks [test]` | Inspect boot-CPU scheduling or verify preemption, sleep and task cleanup |
 | `user [test]` | Execute an isolated EL0 example or verify controlled user faults |
 | `elf [test]` | Load the compiled user ELF or verify repeated execution and rejection |
+| `virtio [test]` | Inspect block transport state or verify read-only sector I/O |
 | `echo [text]` | Print `echo: ` followed by the text, including internal/trailing spaces |
 | `mmu` | Inspect translation registers, identity mappings, and permission probes |
 | `mem [test\|reclaim]` | Inspect/test physical pages or reclaim reusable reservations |
@@ -499,6 +500,66 @@ permissions, address arithmetic, owned regions, system calls, frame origin and
 exact reports. Separate fake-process tests cover fragmented/incorrect context,
 leaked accounting, incomplete output, exit/stdin failures, stderr, deadlines and
 terminate/kill/reap cleanup.
+
+## VirtIO block I/O
+
+`virtio` lists transport/device counts and, when a block device is attached,
+its discovered MMIO base, interrupt, version, capacity in 512-byte sectors,
+read-only feature, queue size and submission/completion/IRQ counters.
+`virtio test` reads the first and last sectors twice, checks repeatability,
+and prints each checksum plus its first/last eight bytes. It requires four
+completed reads and interrupt deliveries, then returns a fresh prompt.
+Invalid arguments print `usage: virtio [test]`.
+
+Ordinary `kernel-run` retains QEMU's default empty transport slots; it needs
+no disk. In that configuration, `virtio` reports `block=no` and `virtio test`
+reports `test unavailable`. `kernel.virtio`, included automatically by
+`kernel-test` and `check`, creates temporary patterned raw disks and attaches
+modern MMIO block devices with read-only backing. No persistent disk is used.
+You can run that action directly after building:
+
+```sh
+python3 scripts/qemu.py virtio-test --image build/kernel-debug/kernel.elf
+```
+
+The QEMU platform discovers up to 32 enabled root-level `virtio,mmio` nodes,
+one register extent and one selected-GIC SPI per transport, preserving edge
+or level trigger flags. Rounded MMIO pages are coalesced and mapped once as
+EL1-only, non-executable Device-nGnRnE memory. RAM, existing device-page aliases
+and no-map conflicts are rejected before activation. Decoded resources remain
+available after DTB reclamation. Discovery rejects translated buses, IOMMU/DMA
+translation, duplicate registers/interrupts and malformed layouts.
+
+The driver supports one modern MMIO version-2 block device and one split queue
+of eight descriptors. It resets with bounded readback, negotiates `VERSION_1`
+and the offered read-only feature, verifies `FEATURES_OK`, installs owned queue
+addresses, and registers the IRQ before `DRIVER_OK`. Capacity reads use bounded
+configuration-generation checks. Other device IDs are counted without a block
+driver; legacy block transports and multiple block devices fail startup.
+
+Two allocator-owned, explicitly zeroed Normal non-cacheable pages hold the
+queue and request. Each read uses a three-descriptor chain for the header,
+512-byte data and status; the driver submits only read requests. Architecture
+barriers publish descriptors/indexes and order completion reads. The IRQ handler
+validates bounded used-ring progress, descriptor identity, byte count and status,
+updates counters and acknowledges MMIO before GIC EOI. Foreground snapshots mask
+IRQs briefly. A half-second request deadline resets/quiesces the device and
+disables its source before releasing DMA pages; failed quiescence halts while
+retaining ownership. Successful operation retains the two pages for later reads.
+Caches remain disabled. Writes, filesystem support, packed/indirect queues,
+multiple outstanding requests and IOMMU operation are outside this milestone.
+
+`kernel.virtio` uses one ten-second deadline and a twenty-second CTest timeout.
+It verifies empty slots, A53 with one/four CPUs, A57 with one/eight, 128/256 MiB
+RAM, 64/128/256-sector disks, exact read data/checksums, repeated counters and
+stable page accounting. It also checks later ELF, monitor, allocator, heap, SMP,
+timer and SGI operations, unchanged backing files, and explicit legacy rejection.
+Host sanitizer fixtures cover discovery, page exclusions, negotiation, DMA
+addresses, reset/configuration bounds, malformed completions, I/O errors and
+full 16-bit index wraparound. Separate fake-process tests cover fragmented/wrong
+reports, missing output, leaks, stdin/exit failures, deadlines, stderr and reaping.
+Transport and block behavior follow the [VirtIO 1.2 specification](https://github.com/oasis-tcs/virtio-spec/blob/v1.2-cs01/content.tex)
+and [MMIO device-tree binding](https://github.com/torvalds/linux/blob/master/Documentation/devicetree/bindings/virtio/mmio.yaml).
 
 ## ELF loading
 
@@ -845,7 +906,7 @@ counters, partial output, stdin/exit failures, deadlines, diagnostics and cleanu
 - GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
-  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance, CPU-discovery, SMP, task, EL0 and ELF-loading coverage, in both kernel presets.
+  tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance, CPU-discovery, SMP, task, EL0, ELF-loading and VirtIO coverage, in both kernel presets.
   Remote CI verification remains pending until a GitHub remote is configured
   and an actual Actions run succeeds.
 
@@ -854,7 +915,10 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 185 host tests per configuration and
-42 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
+sequentially. The current full check passes 202 host tests per configuration and
+45 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
 Docker. Each environment includes formatting, static analysis, host sanitizers,
-ELF inspection, and debug/release QEMU regressions. Remote CI remains unverified.
+ELF inspection, and debug/release QEMU regressions. Normal MMU checks and
+deliberate MMU faults have separate ten-second runner deadlines and twenty-second
+CTest timeouts; both retain all CPU/RAM scenarios.
+Remote CI remains unverified.
