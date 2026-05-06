@@ -227,7 +227,7 @@ def serial_test(command, timeout, exchanges=None, expected_failure=None, qmp_pat
                 if expected_failure is not None:
                     lines = serial.replace(b"\r\n", b"\n").split(b"\n")[:-1]
                     if SUCCESS in serial or any(FAILURE in line and line != expected_failure for line in lines):
-                        reason = "Incorrect expected DTB failure response"
+                        reason = "Incorrect expected boot failure response"
                         break
                     complete = expected_failure in lines
                 elif interactive:
@@ -266,7 +266,7 @@ def serial_test(command, timeout, exchanges=None, expected_failure=None, qmp_pat
                         confirmed_at = time.monotonic()
                     if time.monotonic() - confirmed_at >= 0.05:
                         success = True
-                        reason = ("Expected DTB failure verified" if expected_failure is not None else
+                        reason = ("Expected boot failure verified" if expected_failure is not None else
                                   "Serial UART exchanges verified" if interactive else "Serial boot confirmation received")
                         break
             else:
@@ -1159,9 +1159,124 @@ def elf_test(command,timeout=10,image=None):
         image=embedded(Path(command[command.index('-kernel')+1]))
     return scenario_test(command,timeout,(("cortex-a53",1,128),("cortex-a53",4,128),("cortex-a57",1,128),("cortex-a57",8,256)),lambda memory:elf_exchanges(memory,image))
 
+def virtio_sector(sector):
+    return bytes((i*17+sector*29+3)&255 for i in range(512))
+
+
+def block_checksum(data):
+    value=2166136261
+    for byte in data:value=((value^byte)*16777619)&0xffffffff
+    return value
+
+
+def virtio_read_line(sector):
+    data=virtio_sector(sector)
+    return f'virtio: read sector={sector} checksum=0x{block_checksum(data):08x} first=0x{data[:8].hex()} last=0x{data[-8:].hex()}\r\n'.encode()
+
+
+def virtio_exchanges(memory,sectors,image):
+    yield next(uart_exchanges(memory))
+    baseline=[]
+    def accounting(data):
+        end=data.find(PROMPT)
+        if end<0:return None
+        body=data[:end+len(PROMPT)]
+        report=re.fullmatch(rb'\r\nmem: base=0x([0-9a-f]{16}) size=0x([0-9a-f]{16}) pages=([0-9]+) reserved=([0-9]+) allocated=([0-9]+) free=([0-9]+) metadata=0x([0-9a-f]{16})\r\nmini-os> ',body)
+        if report is None:raise ValueError('Incorrect VirtIO memory accounting')
+        values=tuple(int(value,16 if i in (0,1,6) else 10) for i,value in enumerate(report.groups()))
+        base,size,pages,reserved,allocated,free,_=values
+        if base!=0x40000000 or size!=memory*1024*1024 or pages!=reserved+allocated+free or pages!=size//4096:
+            raise ValueError('Invalid VirtIO memory baseline')
+        if baseline and baseline[0]!=values:raise ValueError('VirtIO read leaked physical pages')
+        baseline[:]=[values]
+        return len(body)
+    completed=0
+    def report(suite):
+        expected_completed=completed
+        def match(data):
+            end=data.find(PROMPT)
+            if end<0:return None
+            body=data[:end+len(PROMPT)]
+            line=re.match(rb'\r\nvirtio: transports=32 devices=1 block=yes base=0x([0-9a-f]{16}) interrupt=([0-9]+) version=2 sectors=([0-9]+) readonly=yes queue=8 submitted=([0-9]+) completed=([0-9]+) interrupts=([0-9]+) ready=yes error=none\r\n',body)
+            if line is None:raise ValueError('Incorrect VirtIO discovery, negotiation or queue state')
+            base=int(line[1],16);interrupt,capacity,submitted,done,irqs=(int(line[i]) for i in range(2,7))
+            if not 0xa000000<=base<0xa004000 or base%512 or interrupt!=48+(base-0xa000000)//512 or capacity!=sectors:
+                raise ValueError('Incorrect VirtIO transport, interrupt or block capacity')
+            if (submitted,done)!=(expected_completed,expected_completed) or irqs<done:
+                raise ValueError('Incorrect VirtIO submission, completion or IRQ accounting')
+            rest=body[line.end():]
+            if suite:
+                reads=b''.join(virtio_read_line(sector) for sector in (0,sectors-1,0,sectors-1))
+                if not rest.startswith(reads):raise ValueError('Incorrect VirtIO read data, checksum or repeatability')
+                rest=rest[len(reads):]
+                terminal=re.fullmatch(rb'virtio: test OK reads=4 interrupts=([0-9]+)\r\nmini-os> ',rest)
+                if terminal is None or int(terminal[1])<4:raise ValueError('VirtIO I/O did not complete through interrupts')
+            elif rest!=PROMPT:raise ValueError('Unexpected VirtIO inventory response')
+            return len(body)
+        return match
+    yield from command_exchange('VirtIO memory baseline',b'mem',accounting)
+    yield from command_exchange('VirtIO inventory',b'virtio',report(False))
+    for _ in range(2):
+        yield from command_exchange('VirtIO read-only I/O',b'virtio test  ',report(True))
+        completed+=4
+        yield from command_exchange('VirtIO retained counters',b'virtio',report(False))
+        yield from command_exchange('VirtIO memory restoration',b'mem',accounting)
+    yield from command_exchange('ELF execution with VirtIO mapped',b'elf',elf_report_matcher(image,False))
+    for payload,response in (
+        (b'virtio x',b'\r\nusage: virtio [test]\r\n'+PROMPT),
+        (b'virtio test x',b'\r\nusage: virtio [test]\r\n'+PROMPT),
+        (b'help',b'\r\n'+HELP+PROMPT),
+        (b'mem test',b'\r\nmem: test OK\r\n'+PROMPT),
+        (b'heap test',b'\r\nheap: test OK\r\n'+PROMPT),
+        (b'smp test',b'\r\nsmp: test OK\r\n'+PROMPT),
+        (b'echo virtio recovered',b'\r\necho: virtio recovered\r\n'+PROMPT),
+    ):yield from command_exchange('VirtIO monitor recovery',payload,response)
+    progress=timer_exchanges(memory);next(progress)
+    yield from progress
+
+
+def virtio_empty_exchanges():
+    yield next(uart_exchanges())
+    yield from command_exchange('empty VirtIO transports',b'virtio',b'\r\nvirtio: transports=32 devices=0 block=no\r\n'+PROMPT)
+    yield from command_exchange('no block device',b'virtio test',b'\r\nvirtio: transports=32 devices=0 block=no\r\nvirtio: test unavailable\r\n'+PROMPT)
+
+
+def virtio_test(command,timeout=10,image=None):
+    if not math.isfinite(timeout) or timeout<=0:raise ValueError('Serial deadline must be positive')
+    if image is None:
+        from verify_user_elf import embedded
+        image=embedded(Path(command[command.index('-kernel')+1]))
+    deadline=time.monotonic()+timeout
+    output,diagnostics=bytearray(),bytearray();pid=0
+    def collect(scenario,steps=None,failure=None):
+        nonlocal pid
+        remaining=deadline-time.monotonic()
+        if remaining<=0:return BootResult(False,'Timed out during VirtIO scenarios',bytes(output),bytes(diagnostics),pid)
+        result=serial_test(scenario,remaining,steps,expected_failure=failure)
+        output.extend(result.stdout);diagnostics.extend(result.stderr);pid=result.pid
+        return BootResult(result.success,result.reason,bytes(output),bytes(diagnostics),pid)
+    result=collect(command,virtio_empty_exchanges())
+    if not result.success:return result
+    with tempfile.TemporaryDirectory(prefix='mini-os-virtio-') as directory:
+        for model,count,memory,sectors in (('cortex-a53',1,128,64),('cortex-a53',4,128,128),('cortex-a57',1,128,64),('cortex-a57',8,256,256)):
+            disk=Path(directory)/f'block-{sectors}.raw'
+            original=b''.join(virtio_sector(sector) for sector in range(sectors));disk.write_bytes(original)
+            scenario=list(command)
+            for flag,value in (('-cpu',model),('-smp',str(count)),('-m',f'{memory}M')):scenario[scenario.index(flag)+1]=value
+            backend=json.dumps({'driver':'raw','node-name':'virtio-check','read-only':True,'file':{'driver':'file','filename':str(disk),'read-only':True}})
+            scenario+=['-global','virtio-mmio.force-legacy=false','-blockdev',backend,'-device','virtio-blk-device,drive=virtio-check']
+            result=collect(scenario,virtio_exchanges(memory,sectors,image))
+            if not result.success:return result
+            if disk.read_bytes()!=original:return BootResult(False,'VirtIO changed the read-only fixture',bytes(output),bytes(diagnostics),pid)
+        # Legacy is explicitly unsupported; no queue may be activated on it.
+        legacy=[*command,'-blockdev',backend,'-device','virtio-blk-device,drive=virtio-check']
+        result=collect(legacy,failure=b'mini-os: boot FAIL: virtio unsupported block transport')
+        if not result.success:return result
+    return BootResult(True,'VirtIO discovery, read-only block I/O, IRQs and legacy rejection verified',bytes(output),bytes(diagnostics),pid)
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "mmu-fault-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test", "task-test", "user-test", "elf-test"))
+    parser.add_argument("action", choices=("run", "test", "uart-test", "fdt-test", "monitor-test", "fault-test", "irq-test", "timer-test", "memory-test", "mmu-test", "mmu-fault-test", "heap-test", "uart-irq-test", "recovery-test", "performance-test", "cpu-discovery-test", "smp-test", "task-test", "user-test", "elf-test", "virtio-test"))
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--qemu", default="qemu-system-aarch64")
     parser.add_argument("--timeout", type=float, default=10)
@@ -1175,7 +1290,7 @@ def main():
             return 130
         finally:
             stop_process(process)
-    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "mmu-fault-test": mmu_fault_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test, "task-test": tasks_test, "user-test": user_test, "elf-test": elf_test}[args.action]
+    runner = {"test": boot_test, "uart-test": uart_test, "fdt-test": fdt_test, "monitor-test": monitor_test, "fault-test": fault_test, "irq-test": irq_test, "timer-test": timer_test, "memory-test": memory_test, "mmu-test": mmu_test, "mmu-fault-test": mmu_fault_test, "heap-test": heap_test, "uart-irq-test": uart_irq_test, "recovery-test": recovery_test, "performance-test": performance_test, "cpu-discovery-test": cpu_discovery_test, "smp-test": smp_test, "task-test": tasks_test, "user-test": user_test, "elf-test": elf_test, "virtio-test": virtio_test}[args.action]
     result = runner(command, args.timeout)
     print(result.stdout.decode(errors="replace"), end="")
     if not result.success:
