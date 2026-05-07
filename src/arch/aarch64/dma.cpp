@@ -1,5 +1,6 @@
 #include "mini_os/arch.h"
 #include "mini_os/drivers/virtio.h"
+
 namespace arch {
 void dma_barrier(drivers::virtio::Order order) {
     // The assembly instruction strings differ; the checker compares only asm AST bodies.
@@ -10,6 +11,7 @@ void dma_barrier(drivers::virtio::Order order) {
         asm volatile("dmb oshld" ::: "memory");
     else
         asm volatile("dsb sy" ::: "memory");
+
     // NOLINTEND(bugprone-branch-clone)
 }
 } // namespace arch

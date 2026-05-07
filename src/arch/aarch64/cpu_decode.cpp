@@ -2,6 +2,7 @@
 
 namespace arch {
 uint64_t cpu_affinity(uint64_t mpidr) { return mpidr & UINT64_C(0xff00ffffff); }
+
 CpuInfo decode_cpu_snapshot(const CpuSnapshot &snapshot) {
     CpuInfo info;
     info.implementer = static_cast<uint8_t>(snapshot.midr >> 24);
@@ -9,6 +10,7 @@ CpuInfo decode_cpu_snapshot(const CpuSnapshot &snapshot) {
     info.variant = static_cast<uint8_t>((snapshot.midr >> 20) & 0xfU);
     info.revision = static_cast<uint8_t>(snapshot.midr & 0xfU);
     info.model = "unknown";
+
     if (info.implementer == 0x41) {
         if (info.part == 0xd03) {
             info.model = "Cortex-A53";
@@ -16,6 +18,7 @@ CpuInfo decode_cpu_snapshot(const CpuSnapshot &snapshot) {
             info.model = "Cortex-A57";
         }
     }
+
     info.el = static_cast<uint8_t>((snapshot.current_el >> 2) & 3U);
     info.affinity[0] = static_cast<uint8_t>(snapshot.mpidr);
     info.affinity[1] = static_cast<uint8_t>(snapshot.mpidr >> 8);
@@ -28,6 +31,7 @@ CpuInfo decode_cpu_snapshot(const CpuSnapshot &snapshot) {
     info.mmu = (snapshot.sctlr & 1U) != 0;
     info.data_cache = (snapshot.sctlr & (UINT64_C(1) << 2)) != 0;
     info.instruction_cache = (snapshot.sctlr & (UINT64_C(1) << 12)) != 0;
+
     return info;
 }
 } // namespace arch

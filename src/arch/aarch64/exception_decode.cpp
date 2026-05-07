@@ -1,4 +1,5 @@
 #include "mini_os/exception.h"
+
 namespace arch {
 ExceptionInfo decode_exception(const ExceptionFrame &frame) {
     ExceptionInfo info;
@@ -16,9 +17,11 @@ ExceptionInfo decode_exception(const ExceptionFrame &frame) {
     info.far_valid = false;
     info.dfsc = 0;
     info.abort_reason = "other";
+
     if (frame.vector >= 16) {
         return info;
     }
+
     static constexpr const char *origins[] = {"current-sp0", "current-spx", "lower-a64",
                                               "lower-a32"};
     static constexpr const char *types[] = {"sync", "irq", "fiq", "serror"};
@@ -29,11 +32,13 @@ ExceptionInfo decode_exception(const ExceptionFrame &frame) {
     info.sp = group == 1 ? frame.entry_sp : frame.sp_el0;
     info.synchronous = frame.vector % 4 == 0;
     info.reason = "not-applicable";
+
     if (info.synchronous) {
         info.ec = static_cast<uint8_t>((frame.esr >> 26) & 0x3f);
         info.instruction_length = (frame.esr & (1ULL << 25)) != 0;
         info.iss = static_cast<uint32_t>(frame.esr & 0x1ffffff);
         info.data_abort = info.ec == 0x24 || info.ec == 0x25;
+
         if (info.data_abort) {
             info.dfsc = static_cast<uint8_t>(info.iss & 63);
             info.write = (info.iss & 64) != 0;
@@ -42,11 +47,13 @@ ExceptionInfo decode_exception(const ExceptionFrame &frame) {
                                 : info.dfsc >= 12 && info.dfsc <= 15 ? "permission"
                                                                      : "other";
         }
+
         info.reason = info.data_abort   ? "data-abort"
                       : info.ec == 0x3c ? "brk"
                       : info.ec == 0    ? "unknown"
                                         : "unrecognized";
     }
+
     return info;
 }
 } // namespace arch

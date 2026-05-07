@@ -9,6 +9,7 @@ mini_os_trigger_brk:
 .global mini_os_fault_brk_site
 mini_os_fault_brk_site:
     brk #0x123
+
     // A trigger that does not trap must never return with corrupted registers.
 1:  wfi
     b 1b
@@ -21,6 +22,7 @@ mini_os_trigger_undef:
 .global mini_os_fault_undef_site
 mini_os_fault_undef_site:
     .inst 0x00000000
+
     // A trigger that does not trap must never return with corrupted registers.
 1:  wfi
     b 1b

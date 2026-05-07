@@ -8,6 +8,7 @@ mini_os_task_yield_site:
     svc #0x201
     ret
 .size mini_os_task_yield,.-mini_os_task_yield
+
 .global mini_os_task_sleep
 .type mini_os_task_sleep,%function
 mini_os_task_sleep:
@@ -16,6 +17,7 @@ mini_os_task_sleep_site:
     svc #0x202
     ret
 .size mini_os_task_sleep,.-mini_os_task_sleep
+
 .global mini_os_task_exit
 .type mini_os_task_exit,%function
 mini_os_task_exit:

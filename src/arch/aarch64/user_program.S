@@ -61,34 +61,42 @@ mini_os_user_demo:
     add sp,sp,#16
     mov x0,#42
     mov x8,#2
+
 mini_os_user_demo_site:
     svc #0
     b .
+
 demo_fail:
     mov x0,#99
     mov x8,#2
     svc #0
     b .
+
 mini_os_user_brk:
 mini_os_user_brk_site:
     brk #0x123
     b .
+
 mini_os_user_undef:
 mini_os_user_undef_site:
     .inst 0x00000000
     b .
+
 mini_os_user_unmapped:
 mini_os_user_unmapped_site:
     ldr x1,[x0]
     b .
+
 mini_os_user_readonly:
 mini_os_user_readonly_site:
     str xzr,[x0]
     b .
+
 mini_os_user_kernel:
 mini_os_user_kernel_site:
     ldr x1,[x0]
     b .
+
 mini_os_user_spin:
     .irp n,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30
         mov x\n,#(0x200+\n)
@@ -96,15 +104,20 @@ mini_os_user_spin:
     mov x17,#0xa0000000
     msr nzcv,x17
     mov x17,#0x211
+
 mini_os_user_spin_site:
     b .
+
 mini_os_user_stack:
     mov sp,x0
+
 mini_os_user_stack_site:
     str xzr,[sp]
     b .
+
 user_message:
     .ascii "user: hello from EL0\n"
+
 user_message_end:
 .balign 4
 mini_os_user_code_end:

@@ -1,4 +1,5 @@
 #include "mini_os/exception_offsets.h"
+
 .section .text.task_probe,"ax"
 .balign 4
 .global mini_os_task_probe

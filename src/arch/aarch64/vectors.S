@@ -1,4 +1,5 @@
 #include "mini_os/exception_offsets.h"
+
 .section .vectors, "ax"
 .balign 2048
 .global mini_os_exception_vectors
@@ -20,6 +21,7 @@ mini_os_vector_\number:
     .endif
     .space 128 - (. - mini_os_vector_\number), 0
 .endm
+
 vector 0
 vector 1
 vector 2
@@ -53,6 +55,7 @@ mini_os_exception_entry:
     ldr x1, [x0, #MINI_OS_CONTEXT_STACK]
     mov sp, x1
     sub sp, sp, #MINI_OS_FRAME_SIZE
+
     // Preserve x2-x30 before using any of them as scratch.
     stp x2, x3, [sp, #16]
     stp x4, x5, [sp, #32]
@@ -89,6 +92,7 @@ mini_os_exception_entry:
     str x1, [sp, #MINI_OS_FRAME_FAR]
     mov x0, sp
     bl mini_os_exception_handler
+
     // The handler selects the saved task frame; restoration remains masked.
     mov sp, x0
     mrs x0, tpidr_el1
@@ -121,6 +125,7 @@ mini_os_exception_entry:
     mov sp, x0
     mrs x0, tpidrro_el0
     eret
+
 mini_os_exception_nested:
     msr daifset, #0xf
 1:  wfi

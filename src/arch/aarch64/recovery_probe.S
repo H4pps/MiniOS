@@ -1,6 +1,8 @@
 #include "mini_os/exception_offsets.h"
 #include "register_sentinels.inc"
+
 .section .text.recovery_probe, "ax"
+
 .macro recovery_probe kind, name
 .global mini_os_probe_recovery_\name
 .type mini_os_probe_recovery_\name, %function
@@ -63,6 +65,8 @@ mini_os_recovery_\name\()_resume:
     add sp, sp, #128
     ret
 .size mini_os_probe_recovery_\name, . - mini_os_probe_recovery_\name
+
 .endm
+
 recovery_probe 0, brk
 recovery_probe 1, undef

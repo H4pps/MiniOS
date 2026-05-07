@@ -1,4 +1,5 @@
 #include "mini_os/features.h"
+
 namespace arch {
 FeatureSnapshot read_feature_snapshot() {
     FeatureSnapshot s;
@@ -8,6 +9,7 @@ FeatureSnapshot read_feature_snapshot() {
     asm volatile("mrs %0, ID_AA64MMFR0_EL1" : "=r"(s.mmfr0));
     asm volatile("mrs %0, ID_AA64MMFR1_EL1" : "=r"(s.mmfr1));
     asm volatile("mrs %0, ID_AA64DFR0_EL1" : "=r"(s.dfr0));
+
     return s;
 }
 } // namespace arch

@@ -82,6 +82,7 @@ mini_os_irq_probe:
     add sp, sp, #128
     ret
 .size mini_os_irq_probe, . - mini_os_irq_probe
+
 .section .bss.irq_probe_values, "aw", %nobits
 .balign 8
 .global mini_os_irq_probe_values

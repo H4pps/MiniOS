@@ -1,4 +1,5 @@
 #include "mini_os/smp_offsets.h"
+
 .section .text.secondary, "ax"
 .balign 16
 .global mini_os_secondary_entry
@@ -15,6 +16,7 @@ mini_os_secondary_entry:
     madd x1, x3, x2, x1
     mov sp, x1
     bl mini_os_secondary_main
+
 1:
     wfi
     b 1b

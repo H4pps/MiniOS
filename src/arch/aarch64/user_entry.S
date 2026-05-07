@@ -1,9 +1,12 @@
 #include "mini_os/exception_offsets.h"
+
 .section .text.user_entry,"ax"
 .balign 4
 .global mini_os_enter_user
 .type mini_os_enter_user,%function
+
 // x0 = initial EL0 frame, x1 = owned parent frame, x2 = foreground DAIF.
+
 mini_os_enter_user:
     stp x0,x1,[x1]
     stp x2,x3,[x1,#16]
