@@ -20,7 +20,8 @@ formatting. Register fixtures exercise the same PL011 implementation used by
 the kernel. Architecture code
 lives in `src/arch/aarch64/`, platform code in `src/platform/qemu_virt/`, drivers in
 `src/drivers/`, and generic code in `src/kernel/`. See [AGENTS.md](AGENTS.md),
-[architecture guidance](docs/architecture.md), and the [roadmap](docs/roadmap.md).
+the [system handbook](docs/README.md), [architecture guide](docs/architecture.md),
+and the [roadmap](docs/roadmap.md).
 Only `ARCH=aarch64`, `PLATFORM=qemu_virt` is supported.
 
 ## Docker workflow (macOS, Linux, Windows)
@@ -527,7 +528,8 @@ one register extent and one selected-GIC SPI per transport, preserving edge
 or level trigger flags. Rounded MMIO pages are coalesced and mapped once as
 EL1-only, non-executable Device-nGnRnE memory. RAM, existing device-page aliases
 and no-map conflicts are rejected before activation. Decoded resources remain
-available after DTB reclamation. Discovery rejects translated buses, IOMMU/DMA
+available throughout runtime; the DTB window remains reserved and read-only.
+Discovery rejects translated buses, IOMMU/DMA
 translation, duplicate registers/interrupts and malformed layouts.
 
 The driver supports one modern MMIO version-2 block device and one split queue

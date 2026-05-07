@@ -9,6 +9,7 @@ verification and relevant host tests; a successful build alone is insufficient.
 ## Development foundation
 
 - [x] Document architecture, platform, driver, and generic kernel ownership.
+- [x] Document every implemented subsystem with linked guides, Mermaid diagrams and verified SVG exports.
 - [x] Configure C17 / C++20 host builds with CMake and Ninja presets.
 - [x] Pin vcpkg dependencies and integrate GoogleTest for C and C++ code.
 - [x] Add formatting, static analysis, and strict compiler warnings.
@@ -101,7 +102,7 @@ three environments. Remote CI verification remains pending.
   - [x] Pass native, ARM64 Docker, and emulated AMD64 checks: 101 host tests/configuration and 20 CTests/kernel preset.
 - [x] **Further memory and UART work**
   - [x] Add heap allocation and reclaim reusable reservations.
-  - [x] Verify heap fragmentation, coalescing, invalid frees and DTB reclamation on native/ARM64/AMD64: 109 host tests/configuration, 23 CTests/kernel preset.
+  - [x] Verify heap fragmentation, coalescing, invalid frees and reusable-reservation reclamation on native/ARM64/AMD64: 109 host tests/configuration, 23 CTests/kernel preset.
   - [x] Add interrupt-driven UART reception.
   - [x] Verify bounded receive handlers, queue/error recovery, idle wakeups and serial bursts on native/ARM64/AMD64: 117 host tests/configuration, 25 CTests/kernel preset.
 - [x] **Further CPU discovery and startup**
