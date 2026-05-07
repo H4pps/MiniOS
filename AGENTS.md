@@ -144,6 +144,10 @@ Prefer straightforward low-level C++ over complex template or inheritance hierar
 
 Clarity is more important than cleverness.
 
+Use blank lines between definitions and between logical steps inside functions,
+such as validation, setup, the main operation, and the result. Keep closely
+related statements together; avoid adding a blank line after every statement.
+
 ## Verification
 
 Never claim functionality works merely because the code compiles.
