@@ -3,6 +3,7 @@
 #include "mini_os/platform.h"
 #include "mini_os/resources.h"
 #include "mini_os/virtio_resources.h"
+
 // NOLINTBEGIN(bugprone-reserved-identifier)
 extern "C" {
 extern const uint8_t __dtb_start[], __dtb_end[], __image_start[], __image_end[];
@@ -12,37 +13,49 @@ extern const uint8_t __task_stacks_start[], __task_stacks_end[];
 extern const uint8_t __text_start[], __text_end[], __rodata_start[], __rodata_end[];
 extern const uint8_t __stack_bottom[], __stack_top[], __stack_guard[], __stack_guard_end[];
 }
+
 // NOLINTEND(bugprone-reserved-identifier)
 namespace {
 constinit arch::PageTables tables;
+
 bool allocate_table(void *, arch::TablePage &page) {
     if (!platform::page_allocator().allocate(page.address))
         return false;
+
     // The allocator supplies complete owned physical RAM pages.
     // NOLINTNEXTLINE(performance-no-int-to-ptr)
     page.entries = reinterpret_cast<uint64_t *>(static_cast<uintptr_t>(page.address));
+
     return true;
 }
+
 uint64_t *access_table(void *, uint64_t address) {
     // Only table addresses owned by PageTables reach this provider.
     // NOLINTNEXTLINE(performance-no-int-to-ptr)
     return reinterpret_cast<uint64_t *>(static_cast<uintptr_t>(address));
 }
+
 void release_table(void *, uint64_t address) { platform::page_allocator().release(address); }
+
 constinit const arch::TableMemory memory{nullptr, allocate_table, access_table, release_table};
+
 kernel::MemoryRange extent(const uint8_t *start, const uint8_t *end) {
     const auto first = reinterpret_cast<uintptr_t>(start), last = reinterpret_cast<uintptr_t>(end);
+
     return {first, last - first, false};
 }
 } // namespace
+
 namespace platform {
 const char *initialize_mmu() {
     const auto &r = platform_resources();
     const auto &g = gic_resources();
     kernel::MemoryRange extra[virtio_capacity];
     size_t extra_count = 0;
+
     if (!virtio_pages(virtio_resources(), extra, extra_count))
         return "mmu invalid VirtIO pages";
+
     const MappingLayout layout{{r.ram_base, r.ram_size, false},
                                extent(__dtb_start, __dtb_end),
                                extent(__image_start, __image_end),
@@ -58,15 +71,21 @@ const char *initialize_mmu() {
                                extent(__task_stacks_start, __task_stacks_end),
                                extra,
                                extra_count};
+
     if (!tables.initialize(memory))
         return "mmu root allocation failed";
+
     if (const auto *error = build_identity_map(tables, layout, memory_reservations())) {
         tables.discard();
+
         return error;
     }
+
     if (!arch::activate_mmu(tables.root()))
         return "mmu activation failed";
+
     tables.seal();
+
     if (!arch::translate(layout.text.base).valid || arch::translate(layout.text.base, true).valid ||
         arch::translate(layout.rodata.base, true).valid ||
         arch::translate(layout.dtb.base, true).valid ||
@@ -74,11 +93,14 @@ const char *initialize_mmu() {
         arch::translate(layout.guard.base).valid || arch::translate(0).valid ||
         !arch::translate(r.uart_base, true).valid)
         return "mmu translation verification failed";
+
     return nullptr;
 }
+
 bool copy_kernel_mappings(arch::PageTables &destination) {
     return destination.initialize_copy(tables, memory);
 }
+
 void render_mmu(kernel::TextWriter &w) {
     const auto s = arch::read_mmu_snapshot();
     w.write("mmu: SCTLR_EL1=");

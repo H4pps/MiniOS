@@ -2,20 +2,25 @@
 #include "mini_os/recovery.h"
 #include "mini_os/smp.h"
 #include "mini_os/tasks.h"
+
 namespace {
 bool valid(kernel::MemoryRange r) {
     return r.size != 0 && r.base < arch::identity_limit && r.size <= arch::identity_limit - r.base;
 }
+
 bool aligned(kernel::MemoryRange r) { return valid(r) && r.base % 4096 == 0 && r.size % 4096 == 0; }
+
 bool contains(kernel::MemoryRange outer, kernel::MemoryRange inner) {
     return valid(outer) && valid(inner) && inner.base >= outer.base &&
            inner.base - outer.base <= outer.size &&
            inner.size <= outer.size - (inner.base - outer.base);
 }
+
 bool overlap(kernel::MemoryRange a, kernel::MemoryRange b) {
     return a.base < b.base + b.size && b.base < a.base + a.size;
 }
 } // namespace
+
 namespace platform {
 const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
                                const kernel::ReservationSet &reservations) {
@@ -30,12 +35,14 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
         l.rodata.base + l.rodata.size > l.guard.base || !valid(l.uart) || !valid(l.distributor) ||
         !valid(l.redistributors))
         return "mmu invalid mapping layout";
+
     if (l.exception_stacks.size != 0 &&
         (!aligned(l.exception_stacks) || !contains(l.image, l.exception_stacks) ||
          l.exception_stacks.size != arch::exception_cpus * arch::exception_stack_stride ||
          overlap(l.exception_stacks, l.text) || overlap(l.exception_stacks, l.rodata) ||
          overlap(l.exception_stacks, l.stack) || overlap(l.exception_stacks, l.guard)))
         return "mmu invalid exception stacks";
+
     if (l.secondary_stacks.size != 0 &&
         (!aligned(l.secondary_stacks) || !contains(l.image, l.secondary_stacks) ||
          l.secondary_stacks.size != max_cpus * arch::secondary_stack_stride ||
@@ -43,6 +50,7 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
          overlap(l.secondary_stacks, l.stack) || overlap(l.secondary_stacks, l.guard) ||
          (l.exception_stacks.size && overlap(l.secondary_stacks, l.exception_stacks))))
         return "mmu invalid secondary stacks";
+
     if (l.task_stacks.size != 0 &&
         (!aligned(l.task_stacks) || !contains(l.image, l.task_stacks) ||
          l.task_stacks.size != kernel::task_capacity * arch::task_stack_stride ||
@@ -51,13 +59,16 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
          (l.exception_stacks.size && overlap(l.task_stacks, l.exception_stacks)) ||
          (l.secondary_stacks.size && overlap(l.task_stacks, l.secondary_stacks))))
         return "mmu invalid task stacks";
+
     for (size_t i = 0; i < reservations.count; ++i) {
         const auto r = reservations.ranges[i];
+
         if (r.size == 0 || r.size > UINT64_MAX - r.base ||
             (r.no_map && (overlap(r, l.dtb) || overlap(r, l.image) || overlap(r, l.uart) ||
                           overlap(r, l.distributor) || overlap(r, l.redistributors))))
             return "mmu invalid no-map reservation";
     }
+
     // Device mappings must not reintroduce an unmapped RAM guard/hole.
     // Check complete MMIO pages because permissions operate at page granularity.
     for (size_t i = 0; i < 3 + l.extra_device_count; ++i) {
@@ -65,30 +76,38 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
                             : i == 1 ? l.distributor
                             : i == 2 ? l.redistributors
                                      : l.extra_devices[i - 3];
+
         if (!valid(device) || device.no_map || device.reusable)
             return "mmu invalid device extent";
+
         const auto first = device.base & ~4095ULL;
         const auto end = (device.base + device.size + 4095) & ~4095ULL;
         const kernel::MemoryRange pages{first, end - first, false};
+
         if (first == 0 || end > arch::identity_limit || overlap(pages, l.ram))
             return "mmu device overlaps RAM";
+
         for (size_t j = 0; j < reservations.count; ++j)
             if (reservations.ranges[j].no_map && overlap(pages, reservations.ranges[j]))
                 return "mmu device overlaps no-map page";
     }
+
     for (size_t i = 0; i < l.extra_device_count; ++i) {
         if (!aligned(l.extra_devices[i]))
             return "mmu invalid extra device alignment";
+
         for (size_t j = 0; j < i + 3; ++j) {
             const auto d = j == 0   ? l.uart
                            : j == 1 ? l.distributor
                            : j == 2 ? l.redistributors
                                     : l.extra_devices[j - 3];
             const auto first = d.base & ~4095ULL, end = (d.base + d.size + 4095) & ~4095ULL;
+
             if (overlap(l.extra_devices[i], {first, end - first, false}))
                 return "mmu overlapping device pages";
         }
     }
+
     for (uint64_t page = l.ram.base; page < l.ram.base + l.ram.size; page += 4096) {
         if (page == 0 || page == l.guard.base || reservations.excludes(page) ||
             (page >= l.exception_stacks.base &&
@@ -100,28 +119,36 @@ const char *build_identity_map(arch::PageTables &tables, const MappingLayout &l,
             (page >= l.task_stacks.base && page - l.task_stacks.base < l.task_stacks.size &&
              (page - l.task_stacks.base) % arch::task_stack_stride == 0))
             continue;
+
         auto kind = arch::MappingKind::writable;
+
         if (page >= l.text.base && page - l.text.base < l.text.size)
             kind = arch::MappingKind::executable;
         else if ((page >= l.rodata.base && page - l.rodata.base < l.rodata.size) ||
                  (page >= l.dtb.base && page - l.dtb.base < l.dtb.size))
             kind = arch::MappingKind::readonly;
+
         if (!tables.map({page, 4096, false}, kind))
             return "mmu RAM mapping failed";
     }
+
     for (size_t i = 0; i < 3 + l.extra_device_count; ++i) {
         const auto device = i == 0   ? l.uart
                             : i == 1 ? l.distributor
                             : i == 2 ? l.redistributors
                                      : l.extra_devices[i - 3];
+
         if (!valid(device) || device.no_map || device.reusable)
             return "mmu invalid device extent";
+
         const auto first = device.base & ~4095ULL;
         const auto end = (device.base + device.size + 4095) & ~4095ULL;
+
         if (first == 0 || end > arch::identity_limit ||
             !tables.map({first, end - first, false}, arch::MappingKind::device))
             return "mmu device mapping failed";
     }
+
     return nullptr;
 }
 } // namespace platform

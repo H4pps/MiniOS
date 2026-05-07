@@ -4,12 +4,15 @@
 #include "mini_os/memory.h"
 #include "mini_os/recovery.h"
 #include "mini_os/serial_queue.h"
+
 namespace {
 uint64_t boot_counter = 0;
 constinit kernel::PerformanceStats last{};
 } // namespace
+
 namespace platform {
 void initialize_diagnostics() { boot_counter = arch::measurement_counter(); }
+
 void render_diagnostics(kernel::TextWriter &writer) {
     const auto flags = arch::mask_irq();
     auto cpu = arch::read_cpu_snapshot();
@@ -36,27 +39,34 @@ void render_diagnostics(kernel::TextWriter &writer) {
     arch::restore_irq(flags);
     kernel::render_diagnostics(writer, stats);
 }
+
 void render_performance(kernel::TextWriter &writer) { kernel::render_performance(writer, last); }
+
 void performance_test() {
     const auto before = memory_stats();
     const auto timer_before = timer_stats();
     uint64_t pages[8];
     size_t count = 0;
     const auto start = arch::measurement_counter();
+
     while (count < 8 && page_allocator().allocate(pages[count]))
         ++count;
     bool valid = count == 8;
+
     for (uint64_t round = 0; round < 64; ++round) {
         for (size_t i = 0; i < count; ++i) {
             // Only allocator-owned RAM is used; volatile accesses are the measured work.
             // NOLINTNEXTLINE(performance-no-int-to-ptr)
             auto *words = reinterpret_cast<volatile uint64_t *>(static_cast<uintptr_t>(pages[i]));
+
             for (size_t word = 0; word < kernel::page_size / 8; ++word)
                 words[word] = pages[i] ^ word ^ round;
+
             for (size_t word = 0; word < kernel::page_size / 8; ++word)
                 valid = (words[word] == (pages[i] ^ word ^ round)) && valid;
         }
     }
+
     for (size_t i = 0; i < count; ++i)
         valid = (page_allocator().release(pages[i]) == kernel::PageAllocator::Release::success) &&
                 valid;
