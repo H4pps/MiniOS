@@ -23,37 +23,47 @@
 namespace {
 void put_character(void *, char character) { platform::early_putc(character); }
 } // namespace
+
 namespace kernel {
 [[noreturn]] void run_console() {
     LineEditor editor;
     TextWriter writer(put_character, nullptr);
     platform::early_write("mini-os: uart ready\nmini-os> ");
+
     for (;;) {
         const auto input = platform::early_read();
+
         if (input.status == serial::ReadStatus::empty) {
             platform::wait_for_console_input();
             continue;
         }
+
         if (input.status == serial::ReadStatus::error) {
             editor.cancel();
             continue;
         }
+
         switch (editor.feed(input.byte)) {
         case EditAction::ignored:
             continue;
+
         case EditAction::appended:
             platform::early_putc(static_cast<char>(input.byte));
             continue;
+
         case EditAction::erased:
             platform::early_write("\b \b");
             continue;
+
         case EditAction::overflow:
             platform::early_putc('\a');
             continue;
+
         case EditAction::submitted:
             platform::early_putc('\n');
             {
                 const auto command = parse_command({editor.text(), editor.length()});
+
                 if (command.kind == CommandKind::virtio ||
                     command.kind == CommandKind::virtio_test) {
                     platform::render_virtio(writer, command.kind == CommandKind::virtio_test);
@@ -132,14 +142,18 @@ namespace kernel {
                     render_text_command(writer, command);
                 }
             }
+
             break;
+
         case EditAction::rejected_too_long:
             platform::early_write("\nmini-os: line too long\n");
             break;
+
         case EditAction::rejected_receive_error:
             platform::early_write("\nmini-os: uart RX error\n");
             break;
         }
+
         editor.clear();
         platform::early_write("mini-os> ");
     }

@@ -9,6 +9,7 @@ void id(TextWriter &w, uint32_t value) {
         w.decimal(value);
 }
 } // namespace
+
 void render_topology(TextWriter &w, const platform::CpuInventory &cpus,
                      const platform::CpuTopology &topology) {
     w.write("topology: described=");
@@ -24,8 +25,10 @@ void render_topology(TextWriter &w, const platform::CpuInventory &cpus,
     w.write(" threads=");
     w.decimal(topology.threads);
     w.put('\n');
+
     if (topology.count > platform::max_cpus || topology.count != cpus.count)
         return;
+
     for (size_t i = 0; i < topology.count; ++i) {
         const auto &r = topology.records[i];
         w.write("topology[");
@@ -35,6 +38,7 @@ void render_topology(TextWriter &w, const platform::CpuInventory &cpus,
         w.write(" socket=");
         id(w, r.socket);
         w.write(" cluster=");
+
         if (r.cluster_count == 0)
             w.put('-');
         else if (r.cluster_count <= 32)

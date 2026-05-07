@@ -10,10 +10,12 @@ bool mini_os_align_up(size_t value, size_t alignment, size_t *result) {
     }
 
     const size_t mask = alignment - 1;
+
     if (value > SIZE_MAX - mask) {
         return false;
     }
 
     *result = (value + mask) & ~mask;
+
     return true;
 }

@@ -1,4 +1,5 @@
 #include "mini_os/features.h"
+
 namespace kernel {
 void render_features(TextWriter &w, const arch::FeatureSnapshot &s) {
     w.write("features: ID_AA64PFR0_EL1=");
@@ -23,6 +24,7 @@ void render_features(TextWriter &w, const arch::FeatureSnapshot &s) {
         "pan",     "hafdbs",    "sb",        "debug",     "breakpoints", "watchpoints"};
     static_assert(sizeof(names) / sizeof(names[0]) ==
                   static_cast<size_t>(arch::FeatureField::count));
+
     for (size_t i = 0; i < static_cast<size_t>(arch::FeatureField::count); ++i) {
         if (i % 4 == 0)
             w.write("features:");
@@ -30,6 +32,7 @@ void render_features(TextWriter &w, const arch::FeatureSnapshot &s) {
         w.put(' ');
         w.write(names[i]);
         w.put('=');
+
         if (value.numeric)
             w.decimal(value.number);
         else
@@ -37,6 +40,7 @@ void render_features(TextWriter &w, const arch::FeatureSnapshot &s) {
         w.put('(');
         w.hex(value.raw, {1});
         w.put(')');
+
         if (i % 4 == 3)
             w.put('\n');
     }

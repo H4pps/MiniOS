@@ -1,5 +1,6 @@
 #include "mini_os/smp.h"
 #include "mini_os/arch.h"
+
 namespace kernel {
 void render_smp(TextWriter &w, const platform::SmpStats &s) {
     w.write("smp: discovered=");
@@ -13,8 +14,10 @@ void render_smp(TextWriter &w, const platform::SmpStats &s) {
     w.put('.');
     w.decimal(s.psci_version & 65535);
     w.put('\n');
+
     if (s.count > platform::max_cpus)
         return;
+
     for (size_t i = 0; i < s.count; ++i) {
         const auto &r = s.records[i];
         w.write("smp[");
@@ -25,6 +28,7 @@ void render_smp(TextWriter &w, const platform::SmpStats &s) {
         w.write(r.enabled ? "enabled" : "disabled");
         w.write(" online=");
         w.write(r.online ? "yes" : "no");
+
         if (r.online) {
             w.write(" role=");
             w.write(i == s.boot_index ? "boot" : "parked");
@@ -47,6 +51,7 @@ void render_smp(TextWriter &w, const platform::SmpStats &s) {
             w.write(" exception-stack=");
             w.hex(r.exception_stack);
         }
+
         w.put('\n');
     }
 }

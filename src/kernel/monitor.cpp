@@ -1,33 +1,47 @@
 #include "mini_os/monitor.h"
+
 namespace kernel {
 Command parse_command(TextSpan line) {
     Command command{CommandKind::empty, {nullptr, 0}, {nullptr, 0}};
+
     if (line.size > 127 || (line.data == nullptr && line.size != 0)) {
         command.kind = CommandKind::invalid;
+
         return command;
     }
+
     for (size_t i = 0; i < line.size; ++i) {
         if (line.data[i] < 32 || line.data[i] > 126) {
             command.kind = CommandKind::invalid;
+
             return command;
         }
     }
+
     size_t start = 0;
+
     while (start < line.size && line.data[start] == ' ') {
         ++start;
     }
+
     if (start == line.size) {
         return command;
     }
+
     size_t end = start;
+
     while (end < line.size && line.data[end] != ' ') {
         ++end;
     }
+
     command.name = {line.data + start, end - start};
+
     while (end < line.size && line.data[end] == ' ') {
         ++end;
     }
+
     command.arguments = {line.data + end, line.size - end};
+
     if (command.name.equals("help")) {
         command.kind = CommandKind::help;
     } else if (command.name.equals("cpu")) {
@@ -52,13 +66,16 @@ Command parse_command(TextSpan line) {
                 command.name.equals("user") || command.name.equals("elf") ||
                 command.name.equals("virtio"))) {
         auto argument = command.arguments;
+
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
             --argument.size;
         }
+
         const bool heap = command.name.equals("heap"), memory = command.name.equals("mem"),
                    perf = command.name.equals("perf"), smp = command.name.equals("smp"),
                    tasks = command.name.equals("tasks"), user = command.name.equals("user"),
                    elf = command.name.equals("elf"), virtio = command.name.equals("virtio");
+
         if (argument.size == 0)
             command.kind = heap     ? CommandKind::heap
                            : memory ? CommandKind::mem
@@ -85,6 +102,7 @@ Command parse_command(TextSpan line) {
             command.kind = CommandKind::usage;
     } else if (command.name.equals("recover")) {
         auto argument = command.arguments;
+
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ')
             --argument.size;
         command.kind = argument.equals("brk")     ? CommandKind::recover_brk
@@ -92,9 +110,11 @@ Command parse_command(TextSpan line) {
                                                   : CommandKind::usage;
     } else if (command.name.equals("fault")) {
         auto argument = command.arguments;
+
         while (argument.size != 0 && argument.data[argument.size - 1] == ' ') {
             --argument.size;
         }
+
         command.kind = argument.equals("brk")        ? CommandKind::fault_brk
                        : argument.equals("undef")    ? CommandKind::fault_undef
                        : argument.equals("unmapped") ? CommandKind::fault_unmapped
@@ -104,6 +124,7 @@ Command parse_command(TextSpan line) {
     } else {
         command.kind = CommandKind::unknown;
     }
+
     if ((command.kind == CommandKind::help || command.kind == CommandKind::cpu ||
          command.kind == CommandKind::topology || command.kind == CommandKind::features ||
          command.kind == CommandKind::diag || command.kind == CommandKind::timer ||
@@ -111,8 +132,10 @@ Command parse_command(TextSpan line) {
         command.arguments.size != 0) {
         command.kind = CommandKind::usage;
     }
+
     return command;
 }
+
 void render_text_command(TextWriter &writer, const Command &command) {
     switch (command.kind) {
     case CommandKind::recover_brk:
@@ -150,6 +173,7 @@ void render_text_command(TextWriter &writer, const Command &command) {
     case CommandKind::fault_brk:
     case CommandKind::fault_undef:
         return;
+
     case CommandKind::help:
         writer.write(
             "commands:\n  help         show commands\n  cpu          show CPU inventory and boot "
@@ -167,19 +191,25 @@ void render_text_command(TextWriter &writer, const Command &command) {
             "[test]   load and execute a compiled user ELF\n  virtio [test]  inspect or read-test "
             "block I/O\n");
         return;
+
     case CommandKind::echo:
         writer.write("echo: ");
         writer.write(command.arguments);
         writer.put('\n');
+
         return;
+
     case CommandKind::unknown:
         writer.write("mini-os: unknown command: ");
         writer.write(command.name);
         writer.put('\n');
+
         return;
+
     case CommandKind::usage:
         writer.write("usage: ");
         writer.write(command.name);
+
         if ((command.name.equals("irq") || command.name.equals("mem") ||
              command.name.equals("heap") || command.name.equals("perf") ||
              command.name.equals("smp") || command.name.equals("tasks") ||
@@ -187,18 +217,25 @@ void render_text_command(TextWriter &writer, const Command &command) {
              command.name.equals("virtio"))) {
             writer.write(command.name.equals("mem") ? " [test|reclaim]" : " [test]");
         }
+
         if (command.name.equals("recover"))
             writer.write(" brk|undef");
+
         if (command.name.equals("fault")) {
             writer.write(" brk|undef|unmapped|readonly|stack");
         }
+
         writer.put('\n');
+
         return;
+
     case CommandKind::invalid:
         writer.write("mini-os: invalid command input\n");
+
         return;
     }
 }
+
 void render_cpu(TextWriter &writer, const platform::CpuInventory &inventory,
                 const arch::CpuSnapshot &snapshot) {
     const auto info = arch::decode_cpu_snapshot(snapshot);
@@ -209,6 +246,7 @@ void render_cpu(TextWriter &writer, const platform::CpuInventory &inventory,
     writer.write(" boot=");
     writer.decimal(static_cast<uint32_t>(inventory.boot_index));
     writer.put('\n');
+
     for (size_t i = 0; i < inventory.count; ++i) {
         const auto &record = inventory.records[i];
         writer.write("cpu[");
@@ -223,6 +261,7 @@ void render_cpu(TextWriter &writer, const platform::CpuInventory &inventory,
         writer.write({record.compatible.data, record.compatible.size});
         writer.put('\n');
     }
+
     writer.write("cpu: model=");
     writer.write(info.model);
     writer.write(" implementer=");
@@ -242,13 +281,16 @@ void render_cpu(TextWriter &writer, const platform::CpuInventory &inventory,
     writer.write("cpu: EL=");
     writer.decimal(info.el);
     writer.write(" affinity=");
+
     for (size_t i = 4; i != 0;) {
         --i;
         writer.decimal(info.affinity[i]);
+
         if (i != 0) {
             writer.put(':');
         }
     }
+
     writer.put('\n');
     writer.write("cpu: DAIF=");
     writer.hex(snapshot.daif);
