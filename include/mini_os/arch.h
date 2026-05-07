@@ -6,8 +6,10 @@
 namespace drivers::virtio {
 enum class Order : uint8_t;
 }
+
 namespace arch {
 void dma_barrier(drivers::virtio::Order order);
+
 struct CpuSnapshot {
     uint64_t midr;
     uint64_t mpidr;
@@ -15,6 +17,7 @@ struct CpuSnapshot {
     uint64_t daif;
     uint64_t sctlr;
 };
+
 struct CpuInfo {
     const char *model;
     uint16_t part;
@@ -31,6 +34,7 @@ struct CpuInfo {
     bool data_cache;
     bool instruction_cache;
 };
+
 CpuSnapshot read_cpu_snapshot();
 CpuInfo decode_cpu_snapshot(const CpuSnapshot &snapshot);
 uint64_t cpu_affinity(uint64_t mpidr);

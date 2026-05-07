@@ -1,6 +1,8 @@
 #ifndef MINI_OS_FEATURES_H
 #define MINI_OS_FEATURES_H
+
 #include "mini_os/text_writer.h"
+
 namespace arch {
 struct FeatureSnapshot {
     uint64_t pfr0, isar0, isar1, mmfr0, mmfr1, dfr0;
@@ -32,14 +34,17 @@ enum class FeatureField : uint8_t {
     watchpoints,
     count
 };
+
 struct FeatureValue {
     const char *label;
     uint8_t raw, number;
     bool numeric;
 };
+
 FeatureSnapshot read_feature_snapshot();
 FeatureValue decode_feature(const FeatureSnapshot &snapshot, FeatureField field);
 } // namespace arch
+
 namespace kernel {
 void render_features(TextWriter &writer, const arch::FeatureSnapshot &snapshot);
 }

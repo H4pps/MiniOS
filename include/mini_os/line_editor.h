@@ -20,8 +20,11 @@ class LineEditor {
     static constexpr size_t capacity = 127;
     LineEditor();
     EditAction feed(uint8_t byte);
+
     const char *text() const { return buffer_; }
+
     size_t length() const { return length_; }
+
     // Preserve CRLF suppression when the caller finishes rendering a submission.
     void clear();
     void cancel();

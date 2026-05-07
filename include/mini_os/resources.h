@@ -16,6 +16,7 @@ enum class ResourceError : uint8_t {
     invalid_memory,
     invalid_coverage,
 };
+
 struct PlatformResources {
     uint64_t uart_base;
     uint64_t uart_size;
@@ -25,12 +26,14 @@ struct PlatformResources {
     fdt::Bytes dtb;
     fdt::Node uart_node;
 };
+
 struct BootLayout {
     uint64_t dtb_base;
     uint64_t dtb_capacity;
     uint64_t image_start;
     uint64_t image_end; // Includes BSS and the separate stack.
 };
+
 ResourceError discover_resources(const fdt::View &view, PlatformResources &resources);
 ResourceError validate_resources(const PlatformResources &resources, const BootLayout &layout);
 const char *error_text(ResourceError error);

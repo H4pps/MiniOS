@@ -18,12 +18,14 @@ enum class Error : uint8_t {
     bad_value,
 };
 const char *error_text(Error error);
+
 struct String {
     const char *data;
     size_t size;
     bool equals(const char *text) const;
     static String literal(const char *text);
 };
+
 struct Bytes {
     const uint8_t *data;
     size_t size;
@@ -32,9 +34,11 @@ struct Bytes {
     Error string(String &value) const;
     Error string_index(const char *text, size_t &index) const;
 };
+
 using Node = uint32_t;
 constexpr Node invalid_node = UINT32_MAX;
 enum class Kind : uint8_t { begin, end_node, property, nop, end };
+
 struct Event {
     Kind kind;
     Node node;
@@ -42,13 +46,16 @@ struct Event {
     String name;
     Bytes value;
 };
+
 struct Reservation {
     uint64_t base, size;
 };
+
 struct ReservationCursor {
     size_t offset = 0;
     bool done = false;
 };
+
 class Cursor {
   public:
     Cursor() : offset_(0), depth_(0) {}
@@ -59,6 +66,7 @@ class Cursor {
     size_t depth_;
     Node stack_[32];
 };
+
 // Borrows a validated blob; keep its bytes alive and unchanged during lookup.
 // All offsets and values are decoded bytewise, so input buffers may be unaligned.
 class View {
@@ -66,8 +74,11 @@ class View {
     View()
         : data_(nullptr), size_(0), structure_(0), structure_end_(0), strings_(0), strings_end_(0) {
     }
+
     static Error open(Bytes blob, View &view);
+
     Bytes blob() const { return {data_, size_}; }
+
     Error next(Cursor &cursor, Event &event) const;
     Error next_reservation(ReservationCursor &cursor, Reservation &entry) const;
     Error find_node(String path, Node &node) const;

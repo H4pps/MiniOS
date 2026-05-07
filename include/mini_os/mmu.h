@@ -1,6 +1,8 @@
 #ifndef MINI_OS_MMU_H
 #define MINI_OS_MMU_H
+
 #include "mini_os/memory.h"
+
 namespace arch {
 constexpr uint64_t identity_limit = 1ULL << 39;
 constexpr uint64_t physical_limit = 1ULL << 40;
@@ -17,27 +19,34 @@ enum class MappingKind : uint8_t {
     user_executable,
     user_writable
 };
+
 struct TablePage {
     uint64_t address;
     uint64_t *entries;
 };
+
 struct TableMemory {
     void *context;
     bool (*allocate)(void *, TablePage &);
     uint64_t *(*access)(void *, uint64_t);
     void (*release)(void *, uint64_t);
 };
+
 class PageTables {
   public:
     constexpr PageTables() : memory_(nullptr), root_(0), count_(0), sealed_(false) {}
+
     bool initialize(const TableMemory &memory);
     bool initialize_copy(const PageTables &source, const TableMemory &memory);
     bool map(kernel::MemoryRange range, MappingKind kind);
     bool map_at(uint64_t virtual_address, kernel::MemoryRange physical, MappingKind kind);
     uint64_t descriptor(uint64_t address) const;
     void discard();
+
     void seal() { sealed_ = true; }
+
     uint64_t root() const { return root_; }
+
     size_t count() const { return count_; }
 
   private:
@@ -48,20 +57,25 @@ class PageTables {
     size_t count_;
     bool sealed_;
 };
+
 bool supports_mmu(uint64_t mmfr0);
+
 struct Translation {
     uint64_t physical, raw;
     bool valid;
 };
+
 struct MmuSnapshot {
     uint64_t sctlr, tcr, ttbr0, mair;
 };
+
 MmuSnapshot read_mmu_snapshot();
 bool activate_mmu(uint64_t root);
 bool switch_address_space(uint64_t root);
 Translation translate_user(uint64_t address, bool write = false);
 Translation translate(uint64_t address, bool write = false);
 } // namespace arch
+
 namespace platform {
 struct MappingLayout {
     kernel::MemoryRange ram, dtb, image, text, rodata, stack, guard, uart, distributor,
@@ -72,6 +86,7 @@ struct MappingLayout {
     const kernel::MemoryRange *extra_devices = nullptr;
     size_t extra_device_count = 0;
 };
+
 const char *build_identity_map(arch::PageTables &tables, const MappingLayout &layout,
                                const kernel::ReservationSet &reservations);
 const char *initialize_mmu();

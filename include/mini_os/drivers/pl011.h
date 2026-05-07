@@ -18,6 +18,7 @@ struct Io {
     uint32_t (*read)(void *, uintptr_t);
     void (*write)(void *, uintptr_t, uint32_t);
 };
+
 const Io &memory_io();
 bool initialize(const Config &config, const Io &io = memory_io());
 serial::ReadResult try_read(uintptr_t base, const Io &io = memory_io());
