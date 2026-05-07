@@ -20,8 +20,7 @@ formatting. Register fixtures exercise the same PL011 implementation used by
 the kernel. Architecture code
 lives in `src/arch/aarch64/`, platform code in `src/platform/qemu_virt/`, drivers in
 `src/drivers/`, and generic code in `src/kernel/`. See [AGENTS.md](AGENTS.md),
-the [system handbook](docs/README.md), [architecture guide](docs/architecture.md),
-and the [roadmap](docs/roadmap.md).
+the [system handbook](docs/README.md), and its [architecture overview](docs/README.md#architecture-and-ownership).
 Only `ARCH=aarch64`, `PLATFORM=qemu_virt` is supported.
 
 ## Docker workflow (macOS, Linux, Windows)

@@ -3,7 +3,7 @@
 mini-os is a freestanding AArch64 kernel and serial monitor for QEMU
 `virt-8.2`. This handbook describes the implemented system. The
 [project README](../README.md) contains setup commands and interactive examples;
-the [roadmap](roadmap.md) records verification and remaining work.
+the [development guide](development.md) explains verification and current limits.
 
 ## System at a glance
 
@@ -33,9 +33,44 @@ Only the boot CPU schedules tasks, executes user programs and owns normal device
 work. Enabled secondary CPUs start through PSCI and remain in a bounded,
 masked-interrupt heartbeat loop. CPU caches remain disabled.
 
+## Architecture and ownership
+
+```mermaid
+%% diagram: architecture-layers
+flowchart TB
+    K["Generic kernel: parsing, policy, rendering, runtime coordination"]
+    P["QEMU platform: discovered resources and subsystem lifetime"]
+    A["AArch64: assembly, registers, translation, context return"]
+    D["Drivers: PL011, GICv3, VirtIO MMIO"]
+    H["QEMU hardware and CPU"]
+    K -->|"small arch interfaces"| A
+    K -->|"runtime services"| P
+    P -->|"resources and callbacks"| D
+    P -->|"CPU operations"| A
+    D -->|"supplied MMIO resources"| H
+    A -->|"instructions and system registers"| H
+```
+
+[Open the SVG](diagrams/architecture-layers.svg).
+
+This is a responsibility diagram, not a claim that every source file compiles
+into an independent library. Platform adapters connect drivers and generic code;
+exception entry routes into kernel policy. Raw assembly stays in the architecture
+layer. QEMU addresses stay in platform discovery or its early-boot contract.
+
+| Layer | Actual implementation | Responsibility |
+| --- | --- | --- |
+| Architecture | [src/arch/aarch64](../src/arch/aarch64) | Startup, system registers, vectors, integer contexts, MMU descriptors and DMA barriers |
+| Platform | [src/platform/qemu_virt](../src/platform/qemu_virt) | Linker layout, discovery, device routing, allocation ownership and initialization |
+| Drivers | [src/drivers](../src/drivers) | PL011 UART, GICv3 MMIO, modern VirtIO block transport |
+| Kernel | [src/kernel](../src/kernel) | FDT/ELF parsing, editor, monitor, allocators, scheduling policy and diagnostics |
+| User image | [src/user](../src/user) | Freestanding EL0 program and its own linker/startup |
+| Host tools | [tools/host/main.cpp](../tools/host/main.cpp) | Native shared-code demonstration |
+| Verification | [tests](../tests), [scripts](../scripts) | GoogleTests, fake processes, ELF inspection and QEMU protocols |
+
 ## Reading paths
 
-Start with [architecture](architecture.md), then [boot](boot.md) and
+Start with the architecture overview above, then [boot](boot.md) and
 [device-tree discovery](device-tree.md) to follow startup. For runtime behavior,
 read [console](console.md), [exceptions](exceptions.md),
 [interrupts and timekeeping](interrupts-timer.md),

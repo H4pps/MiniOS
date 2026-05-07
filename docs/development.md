@@ -1,6 +1,6 @@
 # Development, builds and verification
 
-[Handbook](README.md) · [Architecture](architecture.md) · [Roadmap](roadmap.md)
+[Handbook](README.md) · [Architecture](README.md#architecture-and-ownership)
 
 ## Build modes and artifacts
 
@@ -106,7 +106,7 @@ a debug/release kernel job and native AMD64/ARM64 Docker jobs. The jobs invoke
 the same development commands, so newly registered CTests are inherited.
 Checkout is SHA-pinned and workflow permissions are read-only.
 Local AMD64 Docker verification is emulated on ARM64 macOS; it is not proof
-of an actual hosted Actions run. Remote CI remains unchecked in the roadmap.
+of an actual hosted Actions run. Remote CI remains unverified.
 
 ## Quality and test layers
 
@@ -221,5 +221,4 @@ The [Mermaid CLI documentation](https://github.com/mermaid-js/mermaid-cli/blob/m
 describes that configuration.
 
 Update the guide, regenerate affected diagrams, validate links and review SVGs
-when interfaces change. Keep prose about current behavior separate from the
-roadmap. Use focused Conventional Commits; leave `.gitignore` untouched.
+when interfaces change. Distinguish implemented behavior from unimplemented features. Use focused Conventional Commits; leave `.gitignore` untouched.
