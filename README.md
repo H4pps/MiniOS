@@ -147,7 +147,8 @@ To also prepare the host test environment:
 ```
 
 Host setup clones vcpkg into `.tools/vcpkg/`, checks out the manifest baseline,
-and bootstraps it. The first host configure downloads and builds GoogleTest.
+and bootstraps it. The first host configure installs GoogleTest and `magic_enum`
+for host tests.
 Network access is needed for local build-tool installation and initial hosted
 dependencies. Generated files and downloaded tools stay out of Git.
 
@@ -904,7 +905,11 @@ counters, partial output, stdin/exit failures, deadlines, diagnostics and cleanu
 - Host sanitizer builds use AddressSanitizer and UBSan.
 - CMake and Ninja versions are pinned in `scripts/requirements.txt`; vcpkg
   packages are pinned by `builtin-baseline`.
-- GoogleTest is a host-only optional `tests` feature enabled by `BUILD_TESTING`.
+- GoogleTest and [`magic_enum`](https://github.com/Neargye/magic_enum) are part of
+  the host-only optional `tests` feature enabled by `BUILD_TESTING`. `magic_enum`
+  enumerates FDT, ELF and VirtIO error values to check diagnostic coverage and
+  uniqueness. Its hosted C++ headers are confined to tests; shared kernel code
+  retains explicit error strings and remains freestanding.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
   tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance, CPU-discovery, SMP, task, EL0, ELF-loading and VirtIO coverage, in both kernel presets.
@@ -916,9 +921,9 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The current full check passes 202 host tests per configuration and
-45 CTests per kernel preset on native macOS, ARM64 Docker, and emulated AMD64
-Docker. Each environment includes formatting, static analysis, host sanitizers,
+sequentially. The test suites contain 205 host tests per configuration and
+45 CTests per kernel preset. The workflows support native macOS, ARM64 Docker,
+and emulated AMD64 Docker, including formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Normal MMU checks and
 deliberate MMU faults have separate ten-second runner deadlines and twenty-second
 CTest timeouts; both retain all CPU/RAM scenarios.

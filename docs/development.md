@@ -71,8 +71,11 @@ compiler and versioned QEMU machine, and does not bootstrap hosted libraries.
 ```
 
 Host setup bootstraps vcpkg's exact [manifest baseline](../vcpkg.json).
-GoogleTest is a host-only `tests` feature. A supplied external `VCPKG_ROOT`
-is preserved rather than reset. Kernel builds do not depend on vcpkg.
+GoogleTest and `magic_enum` belong to the host-only `tests` feature. Enum reflection
+checks every declared FDT, ELF and VirtIO error for a distinct, nonempty diagnostic
+instead of an unknown-value fallback. Reflection covers the full eight-bit range
+of these enums. A supplied external `VCPKG_ROOT` is preserved rather than reset.
+Kernel builds do not depend on vcpkg or hosted C++ headers.
 
 [common.sh](../scripts/common.sh) locates the project and tools.
 `MINI_OS_BUILD_ROOT` must be an absolute directory other than `/`.
