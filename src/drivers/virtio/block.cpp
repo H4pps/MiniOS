@@ -1,4 +1,5 @@
 #include "mini_os/drivers/virtio.h"
+#include "mini_os/enum_text.h"
 
 namespace drivers::virtio {
 uint32_t read_mmio(void *, uintptr_t address) {
@@ -35,48 +36,24 @@ Identity identify(Resources r, const Io &io) {
 }
 
 const char *error_text(Error error) {
-    switch (error) {
-    case Error::none:
-        return "none";
+    static constexpr kernel::EnumTextEntry<Error> diagnostics[] = {
+        {Error::none, "none"},
+        {Error::invalid_resource, "invalid-resource"},
+        {Error::unsupported, "unsupported"},
+        {Error::reset_timeout, "reset-timeout"},
+        {Error::features, "features"},
+        {Error::queue, "queue"},
+        {Error::capacity, "capacity"},
+        {Error::busy, "busy"},
+        {Error::unavailable, "unavailable"},
+        {Error::invalid_sector, "invalid-sector"},
+        {Error::completion, "completion"},
+        {Error::io, "io"},
+        {Error::needs_reset, "needs-reset"},
+    };
+    static_assert(kernel::valid_enum_text(diagnostics));
 
-    case Error::invalid_resource:
-        return "invalid-resource";
-
-    case Error::unsupported:
-        return "unsupported";
-
-    case Error::reset_timeout:
-        return "reset-timeout";
-
-    case Error::features:
-        return "features";
-
-    case Error::queue:
-        return "queue";
-
-    case Error::capacity:
-        return "capacity";
-
-    case Error::busy:
-        return "busy";
-
-    case Error::unavailable:
-        return "unavailable";
-
-    case Error::invalid_sector:
-        return "invalid-sector";
-
-    case Error::completion:
-        return "completion";
-
-    case Error::io:
-        return "io";
-
-    case Error::needs_reset:
-        return "needs-reset";
-    }
-
-    return "unknown";
+    return kernel::enum_text(error, diagnostics, "unknown");
 }
 
 uint32_t BlockDevice::read_register(size_t offset) const {

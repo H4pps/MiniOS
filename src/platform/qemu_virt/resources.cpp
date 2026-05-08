@@ -1,4 +1,5 @@
 #include "mini_os/resources.h"
+#include "mini_os/enum_text.h"
 
 namespace {
 using fdt::Error;
@@ -120,39 +121,21 @@ Error extent(const fdt::View &view, fdt::Node node, CellWidths cells, uint64_t &
 
 namespace platform {
 const char *error_text(ResourceError error) {
-    switch (error) {
-    case ResourceError::none:
-        return "OK";
+    static constexpr kernel::EnumTextEntry<ResourceError> diagnostics[] = {
+        {ResourceError::none, "OK"},
+        {ResourceError::invalid_property, "invalid property"},
+        {ResourceError::ambiguous, "ambiguous resources"},
+        {ResourceError::missing_console, "missing console"},
+        {ResourceError::disabled_console, "disabled console"},
+        {ResourceError::unsupported_layout, "unsupported resource layout"},
+        {ResourceError::invalid_uart, "invalid UART"},
+        {ResourceError::invalid_clock, "invalid UART clock"},
+        {ResourceError::invalid_memory, "invalid RAM"},
+        {ResourceError::invalid_coverage, "RAM does not cover boot layout"},
+    };
+    static_assert(kernel::valid_enum_text(diagnostics));
 
-    case ResourceError::invalid_property:
-        return "invalid property";
-
-    case ResourceError::ambiguous:
-        return "ambiguous resources";
-
-    case ResourceError::missing_console:
-        return "missing console";
-
-    case ResourceError::disabled_console:
-        return "disabled console";
-
-    case ResourceError::unsupported_layout:
-        return "unsupported resource layout";
-
-    case ResourceError::invalid_uart:
-        return "invalid UART";
-
-    case ResourceError::invalid_clock:
-        return "invalid UART clock";
-
-    case ResourceError::invalid_memory:
-        return "invalid RAM";
-
-    case ResourceError::invalid_coverage:
-        return "RAM does not cover boot layout";
-    }
-
-    return "unknown error";
+    return kernel::enum_text(error, diagnostics, "unknown error");
 }
 
 ResourceError discover_resources(const fdt::View &view, PlatformResources &resources) {

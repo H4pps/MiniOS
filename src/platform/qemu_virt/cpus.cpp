@@ -1,5 +1,6 @@
 #include "mini_os/cpus.h"
 #include "mini_os/arch.h"
+#include "mini_os/enum_text.h"
 
 namespace {
 using fdt::Error;
@@ -91,33 +92,19 @@ void copy_record(platform::CpuRecord &destination, const platform::CpuRecord &so
 
 namespace platform {
 const char *error_text(CpuDiscoveryError error) {
-    switch (error) {
-    case CpuDiscoveryError::none:
-        return "cpu OK";
+    static constexpr kernel::EnumTextEntry<CpuDiscoveryError> diagnostics[] = {
+        {CpuDiscoveryError::none, "cpu OK"},
+        {CpuDiscoveryError::missing_cpus, "cpu missing /cpus"},
+        {CpuDiscoveryError::invalid_cells, "cpu unsupported cell layout"},
+        {CpuDiscoveryError::invalid_cpu, "cpu invalid properties or affinity"},
+        {CpuDiscoveryError::ambiguous, "cpu ambiguous properties or identities"},
+        {CpuDiscoveryError::capacity_exceeded, "cpu inventory exceeds 8"},
+        {CpuDiscoveryError::boot_cpu_missing, "cpu boot affinity missing"},
+        {CpuDiscoveryError::boot_cpu_disabled, "cpu boot affinity disabled"},
+    };
+    static_assert(kernel::valid_enum_text(diagnostics));
 
-    case CpuDiscoveryError::missing_cpus:
-        return "cpu missing /cpus";
-
-    case CpuDiscoveryError::invalid_cells:
-        return "cpu unsupported cell layout";
-
-    case CpuDiscoveryError::invalid_cpu:
-        return "cpu invalid properties or affinity";
-
-    case CpuDiscoveryError::ambiguous:
-        return "cpu ambiguous properties or identities";
-
-    case CpuDiscoveryError::capacity_exceeded:
-        return "cpu inventory exceeds 8";
-
-    case CpuDiscoveryError::boot_cpu_missing:
-        return "cpu boot affinity missing";
-
-    case CpuDiscoveryError::boot_cpu_disabled:
-        return "cpu boot affinity disabled";
-    }
-
-    return "cpu unknown error";
+    return kernel::enum_text(error, diagnostics, "cpu unknown error");
 }
 
 CpuDiscoveryError discover_cpus(const fdt::View &view, uint64_t boot_affinity,

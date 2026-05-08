@@ -1,4 +1,5 @@
 #include "mini_os/elf.h"
+#include "mini_os/enum_text.h"
 #include "mini_os/monitor.h"
 
 namespace {
@@ -23,51 +24,25 @@ bool intersects(uint64_t a, uint64_t a_end, uint64_t b, uint64_t b_end) {
 
 namespace elf {
 const char *error_text(Error error) {
-    switch (error) {
-    case Error::none:
-        return "none";
+    static constexpr kernel::EnumTextEntry<Error> diagnostics[] = {
+        {Error::none, "none"},
+        {Error::bad_magic, "bad-magic"},
+        {Error::bad_header, "bad-header"},
+        {Error::bad_table, "bad-table"},
+        {Error::unsupported, "unsupported"},
+        {Error::bad_segment, "bad-segment"},
+        {Error::bad_permissions, "bad-permissions"},
+        {Error::bad_address, "bad-address"},
+        {Error::overlap, "overlap"},
+        {Error::bad_entry, "bad-entry"},
+        {Error::capacity, "capacity"},
+        {Error::allocation, "allocation"},
+        {Error::initialization, "initialization"},
+        {Error::mapping, "mapping"},
+    };
+    static_assert(kernel::valid_enum_text(diagnostics));
 
-    case Error::bad_magic:
-        return "bad-magic";
-
-    case Error::bad_header:
-        return "bad-header";
-
-    case Error::bad_table:
-        return "bad-table";
-
-    case Error::unsupported:
-        return "unsupported";
-
-    case Error::bad_segment:
-        return "bad-segment";
-
-    case Error::bad_permissions:
-        return "bad-permissions";
-
-    case Error::bad_address:
-        return "bad-address";
-
-    case Error::overlap:
-        return "overlap";
-
-    case Error::bad_entry:
-        return "bad-entry";
-
-    case Error::capacity:
-        return "capacity";
-
-    case Error::allocation:
-        return "allocation";
-
-    case Error::initialization:
-        return "initialization";
-
-    case Error::mapping:
-        return "mapping";
-    }
-
-    return "unknown";
+    return kernel::enum_text(error, diagnostics, "unknown");
 }
 
 Error View::open(Bytes bytes, Policy policy) {

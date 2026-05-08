@@ -1,4 +1,5 @@
 #include "mini_os/fdt.h"
+#include "mini_os/enum_text.h"
 
 namespace {
 bool fits(size_t offset, size_t count, size_t size) {
@@ -70,39 +71,21 @@ bool name(fdt::Bytes bytes, size_t start, fdt::String &text, size_t &after,
 
 namespace fdt {
 const char *error_text(Error error) {
-    switch (error) {
-    case Error::none:
-        return "OK";
+    static constexpr kernel::EnumTextEntry<Error> diagnostics[] = {
+        {Error::none, "OK"},
+        {Error::not_found, "missing property or node"},
+        {Error::ambiguous, "ambiguous property or phandle"},
+        {Error::bad_magic, "bad magic"},
+        {Error::bad_header, "invalid header"},
+        {Error::bad_version, "unsupported version"},
+        {Error::bad_reservations, "invalid reservation table"},
+        {Error::bad_structure, "invalid structure"},
+        {Error::too_deep, "nesting exceeds 32"},
+        {Error::bad_value, "invalid property value"},
+    };
+    static_assert(kernel::valid_enum_text(diagnostics));
 
-    case Error::not_found:
-        return "missing property or node";
-
-    case Error::ambiguous:
-        return "ambiguous property or phandle";
-
-    case Error::bad_magic:
-        return "bad magic";
-
-    case Error::bad_header:
-        return "invalid header";
-
-    case Error::bad_version:
-        return "unsupported version";
-
-    case Error::bad_reservations:
-        return "invalid reservation table";
-
-    case Error::bad_structure:
-        return "invalid structure";
-
-    case Error::too_deep:
-        return "nesting exceeds 32";
-
-    case Error::bad_value:
-        return "invalid property value";
-    }
-
-    return "unknown error";
+    return kernel::enum_text(error, diagnostics, "unknown error");
 }
 
 String String::literal(const char *text) {
