@@ -4,8 +4,8 @@
   "builtin-baseline": "19780d9cdf84d0944cf9a318666703b89ab6629c",
   "features": {
     "tests": {
-      "description": "Host unit tests for C and C++ modules",
-      "dependencies": ["gtest"]
+      "description": "Host unit tests and enum diagnostic coverage for C and C++ modules",
+      "dependencies": ["gtest", "magic-enum"]
     }
   }
 }
