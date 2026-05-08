@@ -5,7 +5,9 @@
 class Pl011Test : public testing::Test {
   protected:
     uint32_t registers[0x4c / sizeof(uint32_t)]{};
+
     uintptr_t base() { return reinterpret_cast<uintptr_t>(registers); }
+
     uint32_t &at(size_t offset) { return registers[offset / sizeof(uint32_t)]; }
 };
 
@@ -22,6 +24,7 @@ TEST_F(Pl011Test, EmptyFifoDoesNotConsumeErroredDataOrClearErrors) {
 
 TEST_F(Pl011Test, AllValidBytesIncludingNulPreserveErrorClearRegister) {
     at(4) = 0xdead;
+
     for (uint32_t value = 0; value <= 255; ++value) {
         at(0) = value;
         const auto result = drivers::pl011::try_read(base());
@@ -42,6 +45,7 @@ TEST_F(Pl011Test, EachErrorAndEveryCombinationPreserveByteAndClearStatus) {
         EXPECT_EQ(result.errors, errors);
         EXPECT_EQ(at(4), 0U);
     }
+
     EXPECT_EQ(serial::framing, 1);
     EXPECT_EQ(serial::parity, 2);
     EXPECT_EQ(serial::brk, 4);

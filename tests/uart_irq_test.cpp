@@ -7,29 +7,35 @@
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
+
 TEST(ReceiveQueue, OrderedBytesErrorsNulAndWraparound) {
     serial::ReceiveQueue queue;
     EXPECT_EQ(queue.pop().status, serial::ReadStatus::empty);
     queue.push({serial::ReadStatus::empty, 0, 0});
     EXPECT_EQ(queue.size(), 0U);
+
     for (unsigned round = 0; round < 3; ++round) {
         for (unsigned byte = 0; byte < 256; ++byte)
             queue.push({serial::ReadStatus::byte, static_cast<uint8_t>(byte), 0});
         EXPECT_EQ(queue.size(), 256U);
+
         for (unsigned byte = 0; byte < 256; ++byte) {
             const auto result = queue.pop();
             ASSERT_EQ(result.status, serial::ReadStatus::byte);
             EXPECT_EQ(result.byte, byte);
         }
     }
+
     queue.push({serial::ReadStatus::error, 'x', serial::parity});
     EXPECT_EQ(queue.pop().errors, serial::parity);
     EXPECT_EQ(queue.dropped(), 0U);
 }
+
 TEST(ReceiveQueue, OverflowCancelsWholeLineAndRecoversAtEnter) {
     serial::ReceiveQueue queue;
     kernel::LineEditor editor;
     EXPECT_EQ(editor.feed('a'), kernel::EditAction::appended);
+
     for (size_t i = 0; i < serial::ReceiveQueue::capacity; ++i)
         queue.push({serial::ReadStatus::byte, 'x', 0});
     queue.push({serial::ReadStatus::byte, '\n', 0});
@@ -46,6 +52,7 @@ TEST(ReceiveQueue, OverflowCancelsWholeLineAndRecoversAtEnter) {
     EXPECT_EQ(editor.feed('\n'), kernel::EditAction::submitted);
     EXPECT_STREQ(editor.text(), "b");
 }
+
 TEST(UartMonitor, ParsingAndExactStatistics) {
     EXPECT_EQ(kernel::parse_command({"uart  ", 6}).kind, kernel::CommandKind::uart);
     EXPECT_EQ(kernel::parse_command({"uart test", 9}).kind, kernel::CommandKind::usage);
@@ -56,6 +63,7 @@ TEST(UartMonitor, ParsingAndExactStatistics) {
     EXPECT_EQ(output, "uart: mode=irq interrupt=33 interrupts=18446744073709551615 received=3 "
                       "errors=4 dropped=256 queued=2 sleeps=9\n");
 }
+
 class UartDiscovery : public testing::Test {
   protected:
     fixture::Node root{"",
@@ -66,6 +74,7 @@ class UartDiscovery : public testing::Test {
                           {"interrupts", fixture::cells({0, 1, 4})}},
                          {}}}};
     uint32_t id = 0;
+
     const char *discover() {
         const auto bytes = fixture::blob(root);
         fdt::View view;
@@ -75,9 +84,11 @@ class UartDiscovery : public testing::Test {
         fdt::Node uart = fdt::invalid_node;
         EXPECT_EQ(view.find_node(fdt::String::literal("/intc"), gic.node), fdt::Error::none);
         EXPECT_EQ(view.find_node(fdt::String::literal("/uart"), uart), fdt::Error::none);
+
         return platform::discover_uart_interrupt(view, uart, gic, id);
     }
 };
+
 TEST_F(UartDiscovery, InheritedOrExtendedSelectedGic) {
     ASSERT_EQ(discover(), nullptr);
     EXPECT_EQ(id, 33U);
@@ -85,15 +96,18 @@ TEST_F(UartDiscovery, InheritedOrExtendedSelectedGic) {
     ASSERT_EQ(discover(), nullptr);
     EXPECT_EQ(id, 1019U);
 }
+
 TEST_F(UartDiscovery, RejectsMalformedConflictingDisabledAndDuplicateProperties) {
     auto &uart = root.children[1];
     const auto valid = uart.properties[1];
+
     for (const auto &bytes :
          {fixture::cells({0, 988, 4}), fixture::cells({1, 1, 4}), fixture::cells({0, 1, 1}),
           fixture::cells({0, 1}), fixture::cells({0, 1, 4, 0, 2, 4})}) {
         uart.properties[1].value = bytes;
         EXPECT_NE(discover(), nullptr);
     }
+
     uart.properties[1] = valid;
     uart.properties.push_back(valid);
     EXPECT_NE(discover(), nullptr);
@@ -110,6 +124,7 @@ TEST_F(UartDiscovery, RejectsMalformedConflictingDisabledAndDuplicateProperties)
     root.children[0].properties.push_back({"phandle", fixture::cells({10})});
     EXPECT_NE(discover(), nullptr);
 }
+
 class ReceiveInterrupt : public testing::Test {
   protected:
     std::vector<uint32_t> fifo;
@@ -119,27 +134,36 @@ class ReceiveInterrupt : public testing::Test {
     drivers::pl011::Io io{this,
                           [](void *p, uintptr_t address) {
                               auto &s = *static_cast<ReceiveInterrupt *>(p);
+
                               if (address == 0x1040)
                                   return s.status;
+
                               if (address == 0x1018)
                                   return s.consumed == s.fifo.size() ? 16U : 0U;
+
                               if (address == 0x1000)
                                   return s.fifo.at(s.consumed++);
+
                               return 0U;
                           },
                           // Fixed MMIO callback ABI: address precedes register value.
                           // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
                           [](void *p, uintptr_t address, uint32_t value) {
                               auto &s = *static_cast<ReceiveInterrupt *>(p);
+
                               if (address == 0x1044)
                                   s.clear = value;
+
                               if (address == 0x1004)
                                   s.error_clear = value;
+
                               if (address == 0x1038)
                                   s.mask = value;
+
                               if (address == 0x1034)
                                   s.threshold = value;
                           }};
+
     size_t service() {
         return drivers::pl011::service_receive_interrupt(
             0x1000,
@@ -149,6 +173,7 @@ class ReceiveInterrupt : public testing::Test {
             this, io);
     }
 };
+
 TEST_F(ReceiveInterrupt, EnablesOnlyReceiveCausesAndDrainsBytesWithErrors) {
     drivers::pl011::enable_receive_interrupts(0x1000, io);
     EXPECT_EQ(mask, 0x7d0U);
@@ -165,6 +190,7 @@ TEST_F(ReceiveInterrupt, EnablesOnlyReceiveCausesAndDrainsBytesWithErrors) {
     EXPECT_EQ(error_clear, 0U);
     EXPECT_EQ(clear, 0x7c0U);
 }
+
 TEST_F(ReceiveInterrupt, BoundedDrainLeavesLevelPendingAndIgnoresMaskedCauses) {
     fifo.resize(100, 0x41);
     EXPECT_EQ(service(), 64U);
@@ -176,6 +202,7 @@ TEST_F(ReceiveInterrupt, BoundedDrainLeavesLevelPendingAndIgnoresMaskedCauses) {
     EXPECT_EQ(service(), 0U);
     EXPECT_EQ(delivered.size(), 100U);
 }
+
 TEST_F(ReceiveInterrupt, EmptyFifoLatchedErrorCancelsInputAndClearsHardwareStatus) {
     status = 0x400;
     EXPECT_EQ(service(), 0U);

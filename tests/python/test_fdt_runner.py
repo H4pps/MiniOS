@@ -44,18 +44,23 @@ class FdtRunnerTests(unittest.TestCase):
 
         def launch(*args, **kwargs):
             process = real_popen(*args, **kwargs)
+
             processes.append(process)
+
             return process
 
         with patch.object(qemu.subprocess, "Popen", side_effect=launch):
             result = self.run_fake(body)
+
         self.assertTrue(result.success, result.reason)
         self.assertEqual(len(processes), 3)
         self.assertIn(qemu.discovery_line(256), result.stdout)
         self.assertIn(FAILURE, result.stdout)
+
         for process in processes:
             with self.assertRaises(ChildProcessError):
                 os.waitpid(process.pid, os.WNOHANG)
+
             with self.assertRaises(ProcessLookupError):
                 os.kill(process.pid, 0)
 
@@ -64,11 +69,13 @@ class FdtRunnerTests(unittest.TestCase):
                        b"mini-os: boot OK\n" + qemu.discovery_line()):
             result = self.run_fake("os.write(1, " + repr(output) + ")\ntime.sleep(30)\n",
                                    timeout=0.5, runner=qemu.boot_test)
+
             self.assertFalse(result.success)
 
     def test_qmp_disconnect_deadline_and_errors_reap_process(self):
         import tempfile
         from pathlib import Path
+
         for response in (b"", b'{"QMP": {}}\n', b'{"error": {"desc": "rejected"}}\n'):
             with tempfile.TemporaryDirectory(dir="/tmp") as directory:
                 path = Path(directory) / "qmp.sock"
@@ -86,6 +93,7 @@ class FdtRunnerTests(unittest.TestCase):
                 result = self.run_fake(body, timeout=1.25,
                     runner=lambda command, timeout: qemu.serial_test(
                         command, timeout, expected_failure=FAILURE, qmp_path=path))
+
                 self.assertFalse(result.success)
                 self.assertIn("QMP", result.reason)
                 self.assertIn(b"injection diagnostic", result.stderr)
@@ -93,6 +101,7 @@ class FdtRunnerTests(unittest.TestCase):
     def test_incorrect_discovery_values(self):
         body = "os.write(1, " + repr(qemu.READY.replace(b"clock=24000000", b"clock=48000000")) + ")\ntime.sleep(30)\n"
         result = self.run_fake(body, runner=qemu.uart_test)
+
         self.assertFalse(result.success)
         self.assertIn("Incorrect UART response", result.reason)
 
@@ -102,6 +111,7 @@ class FdtRunnerTests(unittest.TestCase):
                 "os.write(1, " + repr(output) + ")\ntime.sleep(30)\n",
                 runner=lambda command, timeout: qemu.serial_test(command, timeout, expected_failure=FAILURE),
             )
+
             self.assertFalse(result.success)
             self.assertIn("Incorrect expected", result.reason)
 
@@ -112,6 +122,7 @@ class FdtRunnerTests(unittest.TestCase):
         )
         started = time.monotonic()
         result = self.run_fake(body, timeout=0.8)
+
         self.assertFalse(result.success)
         self.assertIn("256 MiB", result.reason)
         self.assertLess(time.monotonic() - started, 1.5)
@@ -121,5 +132,6 @@ class FdtRunnerTests(unittest.TestCase):
             "os.write(1, " + repr(FAILURE) + ")\ntime.sleep(30)\n", timeout=0.2,
             runner=lambda command, timeout: qemu.serial_test(command, timeout, expected_failure=FAILURE),
         )
+
         self.assertFalse(result.success)
         self.assertIn("Timed out", result.reason)

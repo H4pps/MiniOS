@@ -2,6 +2,7 @@
 #include "mini_os/performance.h"
 #include <gtest/gtest.h>
 #include <string>
+
 TEST(PerformanceTime, FrequencyValidationAndSubMicrosecondFlooring) {
     uint64_t result = 99;
     EXPECT_FALSE(kernel::counter_microseconds({0}, {0, 1}, result));
@@ -18,6 +19,7 @@ TEST(PerformanceTime, FrequencyValidationAndSubMicrosecondFlooring) {
     ASSERT_TRUE(kernel::counter_microseconds({UINT32_MAX}, {0, UINT32_MAX}, result));
     EXPECT_EQ(result, 1000000U);
 }
+
 TEST(PerformanceTime, ModularWrapNegativeDeltasAndSaturation) {
     uint64_t result = 0;
     ASSERT_TRUE(kernel::counter_microseconds({1000000}, {UINT64_MAX - 5, 4}, result));
@@ -31,9 +33,11 @@ TEST(PerformanceTime, ModularWrapNegativeDeltasAndSaturation) {
     ASSERT_TRUE(kernel::counter_microseconds({1000000}, {0, (1ULL << 63) - 1}, result));
     EXPECT_EQ(result, (1ULL << 63) - 1);
 }
+
 namespace {
 void append(void *p, char c) { static_cast<std::string *>(p)->push_back(c); }
 } // namespace
+
 TEST(PerformanceRender, ExactStateAndNumericFormatting) {
     std::string output;
     kernel::TextWriter writer(append, &output);
@@ -48,6 +52,7 @@ TEST(PerformanceRender, ExactStateAndNumericFormatting) {
     EXPECT_EQ(output, "perf: state=FAIL pages=7 bytes=18446744073709551615 counter-ticks=0 "
                       "microseconds=0 timer-ticks=0\n");
 }
+
 TEST(DiagnosticsRender, CoherentStateAndFixedWidthStackAddress) {
     std::string output;
     kernel::TextWriter writer(append, &output);
@@ -64,10 +69,12 @@ TEST(DiagnosticsRender, CoherentStateAndFixedWidthStackAddress) {
         "diag: el=0 mmu=off caches=on irq=off uptime-us=0 timer-ticks=0 missed=0 recoveries=0 "
         "uart-dropped=256 pages-free=0 heap-free=0 exception-stack=0x0000000000000000\n");
 }
+
 TEST(PerformanceMonitor, ParsingStrictArgumentsAndUsage) {
     EXPECT_EQ(kernel::parse_command({"diag  ", 6}).kind, kernel::CommandKind::diag);
     EXPECT_EQ(kernel::parse_command({"perf  ", 6}).kind, kernel::CommandKind::perf);
     EXPECT_EQ(kernel::parse_command({"perf test  ", 11}).kind, kernel::CommandKind::perf_test);
+
     for (const auto *line : {"perf test x", "perf x", "diag test"}) {
         const auto command = kernel::parse_command({line, std::char_traits<char>::length(line)});
         ASSERT_EQ(command.kind, kernel::CommandKind::usage);

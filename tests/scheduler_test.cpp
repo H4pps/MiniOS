@@ -2,6 +2,7 @@
 #include "mini_os/tasks.h"
 #include <gtest/gtest.h>
 #include <string>
+
 TEST(SchedulerPolicy, InitializationCapacityAndProtectedConsole) {
     kernel::SchedulerPolicy p;
     size_t id = 0;
@@ -16,10 +17,12 @@ TEST(SchedulerPolicy, InitializationCapacityAndProtectedConsole) {
     EXPECT_FALSE(p.terminate(0));
     EXPECT_FALSE(p.cancel(0));
     EXPECT_FALSE(p.reap(0));
+
     for (size_t i = 1; i < 8; ++i) {
         ASSERT_TRUE(p.create(id));
         EXPECT_EQ(id, i);
     }
+
     EXPECT_FALSE(p.create(id));
     EXPECT_EQ(id, 8U);
     EXPECT_EQ(p.slot(8), nullptr);
@@ -30,12 +33,14 @@ TEST(SchedulerPolicy, InitializationCapacityAndProtectedConsole) {
     EXPECT_EQ(p.slot(1)->state, kernel::TaskState::unused);
     EXPECT_EQ(p.slot(0)->dispatches, 1U);
 }
+
 TEST(SchedulerPolicy, RoundRobinFairnessSkipsUnusedAndSleepingTasks) {
     kernel::SchedulerPolicy p;
     p.initialize();
     size_t a = 0, b = 0;
     ASSERT_TRUE(p.create(a));
     ASSERT_TRUE(p.create(b));
+
     for (size_t i = 0; i < 30; ++i)
         EXPECT_EQ(p.select(), (i + 1) % 3);
     EXPECT_EQ(p.slot(0)->dispatches, 11U);
@@ -51,6 +56,7 @@ TEST(SchedulerPolicy, RoundRobinFairnessSkipsUnusedAndSleepingTasks) {
     p.wake(110);
     EXPECT_EQ(p.slot(a)->state, kernel::TaskState::runnable);
 }
+
 TEST(SchedulerPolicy, ModularSleepDeadlinesAndInvalidDelayLeaveStateUntouched) {
     kernel::SchedulerPolicy p;
     p.initialize();
@@ -71,6 +77,7 @@ TEST(SchedulerPolicy, ModularSleepDeadlinesAndInvalidDelayLeaveStateUntouched) {
     p.wake(5);
     EXPECT_EQ(p.slot(id)->state, kernel::TaskState::runnable);
 }
+
 TEST(SchedulerPolicy, ExitReapCancellationTerminationAndSlotReuse) {
     kernel::SchedulerPolicy p;
     p.initialize();
@@ -99,32 +106,41 @@ TEST(SchedulerPolicy, ExitReapCancellationTerminationAndSlotReuse) {
     EXPECT_EQ(p.slot(second)->state, kernel::TaskState::exited);
     EXPECT_TRUE(p.reap(second));
 }
+
 TEST(SchedulerPolicy, AllWorkersSleepingOrExitedAlwaysSelectConsole) {
     kernel::SchedulerPolicy p;
     p.initialize();
     size_t id = 0;
+
     for (size_t n = 1; n < 8; ++n)
         ASSERT_TRUE(p.create(id));
+
     for (size_t n = 1; n < 8; ++n) {
         ASSERT_EQ(p.select(), n);
         ASSERT_TRUE(p.sleep(0, 100));
     }
+
     for (size_t n = 0; n < 10; ++n)
         EXPECT_EQ(p.select(), 0U);
+
     for (size_t n = 1; n < 8; ++n)
         ASSERT_TRUE(p.terminate(n));
     EXPECT_EQ(p.select(), 0U);
+
     for (size_t n = 1; n < 8; ++n)
         EXPECT_TRUE(p.reap(n));
 }
+
 TEST(SchedulerPolicy, DeterministicTransitionsPreserveBoundsAndReadyConsole) {
     kernel::SchedulerPolicy p;
     p.initialize();
     uint64_t now = 0;
+
     for (size_t step = 0; step < 2000; ++step) {
         size_t id = 0;
         p.create(id);
         const auto current = p.current();
+
         if (current && step % 3 == 0)
             p.sleep(now, 10);
         else if (current && step % 7 == 0)
@@ -132,6 +148,7 @@ TEST(SchedulerPolicy, DeterministicTransitionsPreserveBoundsAndReadyConsole) {
         now += 3;
         p.wake(now);
         ASSERT_LT(p.select(), 8U);
+
         for (size_t n = 1; n < 8; ++n)
             if (n != p.current() && p.slot(n)->state == kernel::TaskState::exited)
                 EXPECT_TRUE(p.reap(n));
@@ -139,9 +156,11 @@ TEST(SchedulerPolicy, DeterministicTransitionsPreserveBoundsAndReadyConsole) {
         EXPECT_EQ(p.slot(p.current())->state, kernel::TaskState::runnable);
     }
 }
+
 TEST(TaskFrames, CompleteInitializationAndProtectedExecutionState) {
     arch::ExceptionFrame f;
     ASSERT_TRUE(arch::prepare_task_frame(f, {0x40201000, 0x40300000, 0x40202000, 7}));
+
     for (size_t i = 0; i < 31; ++i)
         EXPECT_EQ(f.registers[i], i == 0 ? 7U : i == 30 ? 0x40202000U : 0U);
     EXPECT_EQ(f.elr, 0x40201000U);
@@ -152,6 +171,7 @@ TEST(TaskFrames, CompleteInitializationAndProtectedExecutionState) {
     EXPECT_EQ(f.far, 0U);
     EXPECT_EQ(f.vector, 4U);
 }
+
 TEST(TaskFrames, RejectInvalidAddressesAndAlignmentWithoutMutation) {
     for (const auto &s : {arch::TaskStart{0, 0x40300000, 0x40202000, 0},
                           arch::TaskStart{0x40201001, 0x40300000, 0x40202000, 0},
@@ -166,8 +186,10 @@ TEST(TaskFrames, RejectInvalidAddressesAndAlignmentWithoutMutation) {
         EXPECT_EQ(f.elr, 99U);
     }
 }
+
 TEST(TaskFrames, CopyEveryRegisterAndExceptionFieldIncludingSelfCopy) {
     arch::ExceptionFrame a{}, b{};
+
     for (size_t i = 0; i < 31; ++i)
         a.registers[i] = 0x100 + i;
     a.entry_sp = 1;
@@ -178,6 +200,7 @@ TEST(TaskFrames, CopyEveryRegisterAndExceptionFieldIncludingSelfCopy) {
     a.far = 6;
     a.vector = 7;
     arch::copy_task_frame(b, a);
+
     for (size_t i = 0; i < 31; ++i)
         EXPECT_EQ(b.registers[i], a.registers[i]);
     EXPECT_EQ(b.entry_sp, 1U);
@@ -190,6 +213,7 @@ TEST(TaskFrames, CopyEveryRegisterAndExceptionFieldIncludingSelfCopy) {
     arch::copy_task_frame(b, b);
     EXPECT_EQ(b.registers[30], 0x11eU);
 }
+
 TEST(TaskTraps, ExactTrustedSitesSyndromesAndAllAllowedRequests) {
     const arch::TaskSites sites{0x40201000, 0x40202000, 0x40203000, 0x40204000};
     arch::ExceptionFrame f{};
@@ -208,6 +232,7 @@ TEST(TaskTraps, ExactTrustedSitesSyndromesAndAllAllowedRequests) {
     f.elr = sites.exit + 4;
     EXPECT_EQ(arch::decode_task_operation(f, sites), arch::TaskOperation::exit);
 }
+
 TEST(TaskTraps, RejectWrongOriginMasksModeSitesStackAndOverflow) {
     const arch::TaskSites sites{0x40201000, 0x40202000, 0x40203000, 0x40204000};
     arch::ExceptionFrame valid{};
@@ -216,42 +241,55 @@ TEST(TaskTraps, RejectWrongOriginMasksModeSitesStackAndOverflow) {
     valid.entry_sp = 0x40300000;
     valid.elr = sites.yield + 4;
     valid.esr = 0x56000201;
+
     for (size_t i = 0; i < 10; ++i) {
         auto f = valid;
+
         switch (i) {
         case 0:
             f.vector = 8;
             break;
+
         case 1:
             f.spsr = 0;
             break;
+
         case 2:
             f.spsr |= 0x80;
             break;
+
         case 3:
             f.elr -= 4;
             break;
+
         case 4:
             f.esr ^= 1;
             break;
+
         case 5:
             f.entry_sp += 1;
             break;
+
         case 6:
             f.entry_sp = 0;
             break;
+
         case 7:
             f.entry_sp = 1ULL << 39;
             break;
+
         case 8:
             f.spsr |= 16;
             break;
+
         default:
             f.esr |= 1ULL << 40;
             break;
         }
+
         EXPECT_EQ(arch::decode_task_operation(f, sites), arch::TaskOperation::invalid);
     }
+
     valid.elr = 0;
     EXPECT_EQ(arch::decode_task_operation(valid, {UINT64_MAX - 3, 0, 0, 0}),
               arch::TaskOperation::invalid);
@@ -259,22 +297,27 @@ TEST(TaskTraps, RejectWrongOriginMasksModeSitesStackAndOverflow) {
     EXPECT_EQ(arch::decode_task_operation(valid, {sites.yield + 1, 0, 0, 0}),
               arch::TaskOperation::invalid);
 }
+
 TEST(TaskProbe, ExactWorkingRegistersFlagsAndStack) {
     arch::ExceptionFrame f{};
+
     for (size_t i = 0; i < 31; ++i)
         f.registers[i] = 0x100 + i;
     f.entry_sp = 0x40300000;
     f.spsr = 0xa0000345;
     ASSERT_TRUE(arch::task_probe_valid(f, f.entry_sp));
+
     for (size_t i = 0; i < 31; ++i) {
         f.registers[i] ^= 1;
         EXPECT_FALSE(arch::task_probe_valid(f, f.entry_sp));
         f.registers[i] ^= 1;
     }
+
     EXPECT_FALSE(arch::task_probe_valid(f, f.entry_sp + 16));
     f.spsr ^= 1ULL << 31;
     EXPECT_FALSE(arch::task_probe_valid(f, f.entry_sp));
 }
+
 TEST(SchedulerMonitor, ExactStatisticsAndStrictCommandArguments) {
     std::string output;
     kernel::TextWriter writer([](void *p, char c) { static_cast<std::string *>(p)->push_back(c); },

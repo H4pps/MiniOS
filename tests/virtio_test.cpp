@@ -8,8 +8,10 @@
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
+
 namespace {
 using drivers::virtio::Error;
+
 class VirtioBlock : public testing::Test {
   protected:
     drivers::virtio::Queue queue{};
@@ -26,38 +28,50 @@ class VirtioBlock : public testing::Test {
                                auto &d = *static_cast<VirtioBlock *>(p);
                                ++d.reads;
                                const auto offset = static_cast<size_t>(address - 0x1000);
+
                                if (offset == 0x10)
                                    return d.regs[0x14 / 4] == 0 ? d.features_low : d.features_high;
+
                                if (offset == 0xfc && d.unstable)
                                    return static_cast<uint32_t>(++d.generation_reads);
+
                                return d.regs.at(offset / 4);
                            },
                            [](void *p, drivers::virtio::RegisterWord word) {
                                auto &d = *static_cast<VirtioBlock *>(p);
                                d.writes.push_back(word);
                                const auto offset = static_cast<size_t>(word.address - 0x1000);
+
                                if (offset == 0x70 && word.value == 0) {
                                    if (d.stall_reset) {
                                        d.regs[offset / 4] = 64;
+
                                        return;
                                    }
+
                                    d.regs[0x44 / 4] = 0;
                                    d.regs[0x60 / 4] = 0;
                                }
+
                                if (offset == 0x70 && word.value == 11 && d.reject_features)
                                    word.value = 3;
+
                                if (offset == 0x44 && d.ignore_ready)
                                    return;
+
                                if (offset == 0x64) {
                                    d.regs[0x60 / 4] &= ~word.value;
+
                                    return;
                                }
+
                                d.regs.at(offset / 4) = word.value;
                            },
                            [](void *p, drivers::virtio::Order order) {
                                static_cast<VirtioBlock *>(p)->barriers.push_back(order);
                            }};
     drivers::virtio::Dma dma{&queue, &request, 0x50000000, 0x50001000};
+
     void SetUp() override {
         regs[0] = 0x74726976;
         regs[1] = 2;
@@ -66,11 +80,14 @@ class VirtioBlock : public testing::Test {
         regs[0x34 / 4] = 8;
         regs[0x100 / 4] = 64;
     }
+
     Error prepare() { return block.prepare({0x1000, 0x200}, io, dma); }
+
     void ready() {
         ASSERT_EQ(prepare(), Error::none);
         ASSERT_EQ(block.start(), Error::none);
     }
+
     void complete(uint8_t status = 0) {
         const auto index = queue.used.index;
         queue.used.ring[index % 8] = {0, 513};
@@ -80,6 +97,7 @@ class VirtioBlock : public testing::Test {
         block.interrupt();
     }
 };
+
 class VirtioDiscovery : public testing::Test {
   protected:
     fixture::Node root{"",
@@ -103,6 +121,7 @@ class VirtioDiscovery : public testing::Test {
                           {"interrupts", fixture::cells({0, 17, 4})}},
                          {}}}};
     platform::VirtioResources resources{};
+
     const char *discover() {
         const auto bytes = fixture::blob(root);
         fdt::View view;
@@ -110,10 +129,12 @@ class VirtioDiscovery : public testing::Test {
         platform::GicResources gic{};
         gic.phandle = 10;
         EXPECT_EQ(view.find_node(fdt::String::literal("/intc"), gic.node), fdt::Error::none);
+
         return platform::discover_virtio(view, gic, resources);
     }
 };
 } // namespace
+
 TEST_F(VirtioBlock, NegotiationQueueAddressesInitializationAndDriverOkOrdering) {
     EXPECT_EQ(block.read(0), Error::unavailable);
     ASSERT_EQ(prepare(), Error::none);
@@ -133,6 +154,7 @@ TEST_F(VirtioBlock, NegotiationQueueAddressesInitializationAndDriverOkOrdering) 
     EXPECT_EQ(prepare(), Error::busy);
     EXPECT_EQ(barriers.back(), drivers::virtio::Order::quiesce);
 }
+
 TEST_F(VirtioBlock, BoundedReadChainPublicationIrqCompletionAndNoPollingCompletion) {
     ready();
     ASSERT_EQ(block.read(63), Error::none);
@@ -156,6 +178,7 @@ TEST_F(VirtioBlock, BoundedReadChainPublicationIrqCompletionAndNoPollingCompleti
     EXPECT_TRUE(block.pending());
     EXPECT_EQ(block.read(1), Error::busy);
     EXPECT_EQ(block.stats().submitted, 1U);
+
     // VirtioBlock-written completion is consumed only by the interrupt path.
     queue.used.ring[0] = {0, 513};
     queue.used.index = 1;
@@ -177,18 +200,22 @@ TEST_F(VirtioBlock, BoundedReadChainPublicationIrqCompletionAndNoPollingCompleti
     EXPECT_EQ(block.read(0), Error::unavailable);
     ASSERT_EQ(prepare(), Error::none);
 }
+
 TEST_F(VirtioBlock, RingAndSixteenBitIndicesWrapWithoutLosingCompletions) {
     ready();
+
     for (unsigned i = 0; i < 65537; ++i) {
         ASSERT_EQ(block.read(i % 64), Error::none);
         complete();
         ASSERT_EQ(block.result(), Error::none);
     }
+
     EXPECT_EQ(block.stats().completed, 65537U);
     EXPECT_EQ(block.stats().interrupts, 65537U);
     EXPECT_EQ(queue.available.index, 1U);
     EXPECT_EQ(queue.used.index, 1U);
 }
+
 TEST_F(VirtioBlock, IdentityFeatureQueueCapacityAndGenerationRejection) {
     for (size_t word : {size_t{0}, size_t{1}, size_t{2}}) {
         const auto previous = regs[word];
@@ -196,6 +223,7 @@ TEST_F(VirtioBlock, IdentityFeatureQueueCapacityAndGenerationRejection) {
         EXPECT_EQ(prepare(), Error::unsupported);
         regs[word] = previous;
     }
+
     features_high = 0;
     EXPECT_EQ(prepare(), Error::features);
     EXPECT_TRUE(block.stop());
@@ -231,12 +259,14 @@ TEST_F(VirtioBlock, IdentityFeatureQueueCapacityAndGenerationRejection) {
     EXPECT_EQ(block.stats().sectors, (1ULL << 32) + 64);
     EXPECT_FALSE(block.stats().readonly);
 }
+
 TEST_F(VirtioBlock, InvalidBindingsAndDmaExtentsAreRejectedBeforeMmio) {
     for (uint64_t address : std::array<uint64_t, 4>{0, 1, UINT64_MAX, UINT64_MAX - 4095}) {
         auto invalid = dma;
         invalid.queue_address = address;
         EXPECT_EQ(block.prepare({0x1000, 0x200}, io, invalid), Error::invalid_resource);
     }
+
     auto invalid = dma;
     invalid.request_address = invalid.queue_address;
     EXPECT_EQ(block.prepare({0x1000, 0x200}, io, invalid), Error::invalid_resource);
@@ -253,6 +283,7 @@ TEST_F(VirtioBlock, InvalidBindingsAndDmaExtentsAreRejectedBeforeMmio) {
     EXPECT_TRUE(writes.empty());
     EXPECT_TRUE(block.stop());
 }
+
 TEST_F(VirtioBlock, ResetDeadlineQuiescenceAndLateInterruptSafety) {
     stall_reset = true;
     EXPECT_EQ(prepare(), Error::reset_timeout);
@@ -273,6 +304,7 @@ TEST_F(VirtioBlock, ResetDeadlineQuiescenceAndLateInterruptSafety) {
     block.interrupt();
     EXPECT_EQ(block.stats().completed, 0U);
 }
+
 TEST_F(VirtioBlock, SpuriousConfigurationAndDeviceNeedsResetInterrupts) {
     ready();
     block.interrupt();
@@ -294,9 +326,11 @@ TEST_F(VirtioBlock, SpuriousConfigurationAndDeviceNeedsResetInterrupts) {
     block.interrupt();
     EXPECT_EQ(block.result(), Error::needs_reset);
 }
+
 TEST_F(VirtioBlock, BadUsedElementsStatusesAndUnsolicitedCompletionsAreBounded) {
     for (unsigned malformed = 0; malformed < 5; ++malformed) {
         ready();
+
         if (malformed != 4)
             ASSERT_EQ(block.read(0), Error::none);
         queue.used.ring[0] = {malformed == 0 ? 1U : 0U, malformed == 1 ? 512U : 513U};
@@ -310,6 +344,7 @@ TEST_F(VirtioBlock, BadUsedElementsStatusesAndUnsolicitedCompletionsAreBounded) 
         EXPECT_EQ(regs[0x60 / 4], 0U);
         EXPECT_TRUE(block.stop());
     }
+
     ready();
     ASSERT_EQ(block.read(0), Error::none);
     complete(1);
@@ -323,6 +358,7 @@ TEST_F(VirtioBlock, BadUsedElementsStatusesAndUnsolicitedCompletionsAreBounded) 
     complete();
     EXPECT_EQ(block.result(), Error::none);
 }
+
 TEST_F(VirtioDiscovery, SelectedGicCellsAliasesStatusOrderingAndPageCoalescing) {
     ASSERT_EQ(discover(), nullptr);
     ASSERT_EQ(resources.count, 2U);
@@ -347,8 +383,10 @@ TEST_F(VirtioDiscovery, SelectedGicCellsAliasesStatusOrderingAndPageCoalescing) 
     ASSERT_EQ(discover(), nullptr);
     EXPECT_EQ(resources.count, 0U);
 }
+
 TEST_F(VirtioDiscovery, RejectMalformedRegistersInterruptsDuplicateResourcesAndTranslations) {
     const auto valid = root;
+
     for (const auto &bytes :
          {fixture::cells({0, 0, 0, 512}), fixture::cells({0, 0xa000001, 0, 512}),
           fixture::cells({0, 0xa000000, 0, 0x107}),
@@ -359,17 +397,20 @@ TEST_F(VirtioDiscovery, RejectMalformedRegistersInterruptsDuplicateResourcesAndT
         EXPECT_NE(discover(), nullptr);
         EXPECT_EQ(resources.count, 0U);
     }
+
     for (const auto &bytes : {fixture::cells({1, 16, 1}), fixture::cells({0, 988, 1}),
                               fixture::cells({0, 16, 2}), fixture::cells({0, 16})}) {
         root = valid;
         fixture::property(root.children[1], "interrupts") = bytes;
         EXPECT_NE(discover(), nullptr);
     }
+
     for (auto name : {"iommus", "dma-ranges", "iommu-map"}) {
         root = valid;
         root.children[1].properties.push_back({name, {}});
         EXPECT_NE(discover(), nullptr);
     }
+
     root = valid;
     root.children[1].properties.push_back(root.children[1].properties[1]);
     EXPECT_NE(discover(), nullptr);
@@ -393,8 +434,10 @@ TEST_F(VirtioDiscovery, RejectMalformedRegistersInterruptsDuplicateResourcesAndT
     root.children.erase(root.children.begin() + 1);
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST_F(VirtioDiscovery, OneCellWidthsThirtyTwoTransportBoundaryAndMalformedPageExtents) {
     root.children.resize(1);
+
     for (uint32_t i = 0; i < 32; ++i)
         root.children.push_back({"virtio@" + std::to_string(i),
                                  {{"compatible", fixture::strings({"virtio,mmio"})},
@@ -414,6 +457,7 @@ TEST_F(VirtioDiscovery, OneCellWidthsThirtyTwoTransportBoundaryAndMalformedPageE
     root.children.resize(3);
     fixture::property(root, "#address-cells") = fixture::cells({1});
     fixture::property(root, "#size-cells") = fixture::cells({1});
+
     for (size_t i = 1; i < 3; ++i)
         fixture::property(root.children[i], "reg") =
             fixture::cells({0xa000000 + static_cast<uint32_t>(i) * 512, 512});
@@ -427,6 +471,7 @@ TEST_F(VirtioDiscovery, OneCellWidthsThirtyTwoTransportBoundaryAndMalformedPageE
     resources.count = 0;
     EXPECT_FALSE(platform::virtio_pages(resources, nullptr, count));
 }
+
 TEST(VirtioMonitor, ExactStatisticsChecksumAndStrictCommands) {
     EXPECT_EQ(kernel::parse_command({"virtio", 6}).kind, kernel::CommandKind::virtio);
     EXPECT_EQ(kernel::parse_command({" virtio test  ", 14}).kind, kernel::CommandKind::virtio_test);
@@ -448,16 +493,19 @@ TEST(VirtioMonitor, ExactStatisticsChecksumAndStrictCommands) {
               "virtio: transports=32 devices=1 block=yes base=0x000000000a003e00 interrupt=79 "
               "version=2 sectors=64 readonly=yes queue=8 submitted=18446744073709551615 "
               "completed=12 interrupts=17 ready=yes error=none\n");
+
     for (const std::string command : {"virtio x", "virtio test x"}) {
         output.clear();
         kernel::render_text_command(writer,
                                     kernel::parse_command({command.data(), command.size()}));
         EXPECT_EQ(output, "usage: virtio [test]\n");
     }
+
     const uint8_t hello[] = {'h', 'e', 'l', 'l', 'o'};
     EXPECT_EQ(kernel::block_checksum(hello, 5), 0x4f9f2cabU);
     EXPECT_EQ(kernel::block_checksum(nullptr, 0), 2166136261U);
 }
+
 TEST_F(VirtioBlock, ConfigurationShrinkAndUnstableCapacityTerminatePendingRequest) {
     ready();
     ASSERT_EQ(block.read(63), Error::none);
@@ -476,6 +524,7 @@ TEST_F(VirtioBlock, ConfigurationShrinkAndUnstableCapacityTerminatePendingReques
     EXPECT_EQ(generation_reads, 32U);
     EXPECT_TRUE(block.stop());
 }
+
 TEST_F(VirtioDiscovery, RejectRootDmaTranslationMalformedCompatibilityAndCellCounts) {
     const auto valid = root;
     root.properties.push_back({"dma-ranges", {}});
@@ -489,6 +538,7 @@ TEST_F(VirtioDiscovery, RejectRootDmaTranslationMalformedCompatibilityAndCellCou
     EXPECT_NE(discover(), nullptr);
     EXPECT_EQ(resources.count, 0U);
 }
+
 TEST_F(VirtioBlock, TransportEncodesCompletePhysicalAddressesWithoutArchitectureSpecificLimits) {
     dma.queue_address = 1ULL << 40;
     dma.request_address = dma.queue_address + 4096;

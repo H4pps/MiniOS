@@ -6,6 +6,7 @@
 #include <array>
 #include <gtest/gtest.h>
 #include <string>
+
 class Tables : public testing::Test {
   protected:
     std::array<std::array<uint64_t, 512>, 16> pages{};
@@ -17,21 +18,26 @@ class Tables : public testing::Test {
         this,
         [](void *p, arch::TablePage &page) {
             auto &s = *static_cast<Tables *>(p);
+
             for (size_t i = 0; i < s.limit; ++i)
                 if (!s.used[i]) {
                     s.used[i] = true;
                     page.address = 0x100000 + i * 4096 + (s.malformed ? 1 : 0);
                     page.entries = s.pages[i].data();
+
                     return true;
                 }
             return false;
         },
         [](void *p, uint64_t address) -> uint64_t * {
             auto &s = *static_cast<Tables *>(p);
+
             if (address == s.unreadable_address || address < 0x100000 ||
                 (address - 0x100000) % 4096 != 0 || (address - 0x100000) / 4096 >= s.limit)
                 return nullptr;
+
             const auto i = static_cast<size_t>((address - 0x100000) / 4096);
+
             return s.used[i] ? s.pages[i].data() : nullptr;
         },
         [](void *p, uint64_t address) {
@@ -45,15 +51,18 @@ class Tables : public testing::Test {
                                    {0x40016000, 0x1000, false},   {0x9000000, 0x1000, false},
                                    {0x8000000, 0x10000, false},   {0x80a0000, 0x20000, false}};
 };
+
 TEST_F(Tables, ExplicitZeroingDescriptorsAndEl1Permissions) {
     pages[0].fill(UINT64_MAX);
     ASSERT_TRUE(tables.initialize(memory));
+
     for (auto entry : pages[0])
         EXPECT_EQ(entry, 0U);
     EXPECT_FALSE(tables.initialize(memory));
     const std::array<arch::MappingKind, 4> kinds{
         arch::MappingKind::writable, arch::MappingKind::readonly, arch::MappingKind::executable,
         arch::MappingKind::device};
+
     for (size_t i = 0; i < kinds.size(); ++i) {
         const uint64_t address = 0x40200000 + i * 4096;
         ASSERT_TRUE(tables.map({address, 4096, false}, kinds[i]));
@@ -67,17 +76,21 @@ TEST_F(Tables, ExplicitZeroingDescriptorsAndEl1Permissions) {
         EXPECT_EQ((d & 0x80) != 0, i == 1 || i == 2);
         EXPECT_EQ((d >> 2) & 7, i == 3 ? 1U : 0U);
     }
+
     EXPECT_EQ(tables.count(), 3U);
     tables.discard();
+
     for (bool allocated : used)
         EXPECT_FALSE(allocated);
     EXPECT_EQ(tables.root(), 0U);
 }
+
 TEST_F(Tables, RejectsOverlapsAndUnsupportedAddressesWithoutPartialLeaves) {
     ASSERT_TRUE(tables.initialize(memory));
     ASSERT_TRUE(tables.map({0x12000, 4096, false}, arch::MappingKind::readonly));
     EXPECT_FALSE(tables.map({0x11000, 0x3000, false}, arch::MappingKind::writable));
     EXPECT_EQ(tables.descriptor(0x11000), 0U);
+
     for (const auto range : {kernel::MemoryRange{0, 4096, false},
                              {1, 4096, false},
                              {0x1000, 4095, false},
@@ -91,6 +104,7 @@ TEST_F(Tables, RejectsOverlapsAndUnsupportedAddressesWithoutPartialLeaves) {
     EXPECT_EQ(tables.descriptor(arch::identity_limit), 0U);
     tables.discard();
 }
+
 TEST_F(Tables, ExhaustionCleanupMalformedProviderAndSealedImmutability) {
     limit = 2;
     ASSERT_TRUE(tables.initialize(memory));
@@ -110,6 +124,7 @@ TEST_F(Tables, ExhaustionCleanupMalformedProviderAndSealedImmutability) {
     tables.discard();
     EXPECT_EQ(tables.root(), root);
 }
+
 TEST_F(Tables, IdentityLayoutProtectsBootMemoryAndExcludesNoMapAndGuard) {
     kernel::ReservationSet reservations;
     ASSERT_TRUE(reservations.add({0x40080001, 1, true}));
@@ -127,6 +142,7 @@ TEST_F(Tables, IdentityLayoutProtectsBootMemoryAndExcludesNoMapAndGuard) {
     EXPECT_EQ((tables.descriptor(0x9000000) >> 2) & 7, 1U);
     tables.discard();
 }
+
 TEST_F(Tables, RejectsInvalidLayoutNoMapConflictsAndDeviceAliases) {
     kernel::ReservationSet r;
     ASSERT_TRUE(tables.initialize(memory));
@@ -152,9 +168,11 @@ TEST_F(Tables, RejectsInvalidLayoutNoMapConflictsAndDeviceAliases) {
     invalid.uart = invalid.distributor;
     EXPECT_NE(platform::build_identity_map(tables, invalid, r), nullptr);
     tables.discard();
+
     for (bool allocated : used)
         EXPECT_FALSE(allocated);
 }
+
 TEST(MmuFeatures, RequiresFourKiBAndAtLeastFortyPhysicalBits) {
     EXPECT_FALSE(arch::supports_mmu(0));
     EXPECT_FALSE(arch::supports_mmu(1));
@@ -167,9 +185,11 @@ TEST(MmuFeatures, RequiresFourKiBAndAtLeastFortyPhysicalBits) {
     EXPECT_NE(arch::mmu_tcr & (1ULL << 23), 0U);
     EXPECT_EQ((arch::mmu_tcr >> 32) & 7, 2U);
 }
+
 TEST(DataAbort, DecodeCurrentAndLowerElTranslationPermissionAndInvalidFar) {
     arch::ExceptionFrame frame{};
     frame.vector = 4;
+
     for (uint64_t ec : {0x24ULL, 0x25ULL})
         for (uint64_t dfsc : {4ULL, 5ULL, 6ULL, 7ULL, 12ULL, 13ULL, 14ULL, 15ULL, 0ULL, 63ULL}) {
             frame.esr = (ec << 26) | (1ULL << 25) | 64 | dfsc;
@@ -187,6 +207,7 @@ TEST(DataAbort, DecodeCurrentAndLowerElTranslationPermissionAndInvalidFar) {
     frame.vector = 5;
     EXPECT_FALSE(arch::decode_exception(frame).data_abort);
 }
+
 TEST(DataAbort, ExactReportAndMonitorFaultArguments) {
     arch::ExceptionFrame frame{};
     frame.vector = 4;
@@ -221,9 +242,11 @@ TEST_F(Tables, EmergencyStacksAreWritableWithOneUnmappedGuardPerCpu) {
     bad.exception_stacks.base = layout.stack.base;
     EXPECT_NE(platform::build_identity_map(tables, bad, reservations), nullptr);
     ASSERT_EQ(platform::build_identity_map(tables, layout, reservations), nullptr);
+
     for (size_t i = 0; i < 8; ++i) {
         const auto guard = layout.exception_stacks.base + i * arch::exception_stack_stride;
         EXPECT_EQ(tables.descriptor(guard), 0U);
+
         for (uint64_t page = guard + 4096; page < guard + arch::exception_stack_stride;
              page += 4096) {
             const auto descriptor = tables.descriptor(page);
@@ -233,6 +256,7 @@ TEST_F(Tables, EmergencyStacksAreWritableWithOneUnmappedGuardPerCpu) {
             EXPECT_NE(descriptor & (1ULL << 54), 0U);
         }
     }
+
     tables.discard();
 }
 
@@ -248,6 +272,7 @@ TEST_F(Tables, SecondaryStacksExcludeAllGuardsAndRejectLayoutConflicts) {
     bad.secondary_stacks.base = layout.stack.base;
     EXPECT_NE(platform::build_identity_map(tables, bad, reservations), nullptr);
     ASSERT_EQ(platform::build_identity_map(tables, layout, reservations), nullptr);
+
     for (size_t i = 0; i < 8; ++i) {
         const auto guard = layout.secondary_stacks.base + i * 68ULL * 1024;
         EXPECT_EQ(tables.descriptor(guard), 0U);
@@ -269,6 +294,7 @@ TEST_F(Tables, TaskStacksHavePrivateWritablePagesAndUnmappedGuards) {
     bad.task_stacks.size -= 4096;
     EXPECT_NE(platform::build_identity_map(tables, bad, reservations), nullptr);
     ASSERT_EQ(platform::build_identity_map(tables, layout, reservations), nullptr);
+
     for (size_t i = 0; i < 8; ++i) {
         const auto guard = layout.task_stacks.base + i * 68ULL * 1024;
         EXPECT_EQ(tables.descriptor(guard), 0U);
@@ -283,6 +309,7 @@ TEST_F(Tables, SeparateVirtualPhysicalAddressesEnforceUserWxAndPrivilegePermissi
     const std::array<arch::MappingKind, 3> kinds{arch::MappingKind::user_readonly,
                                                  arch::MappingKind::user_executable,
                                                  arch::MappingKind::user_writable};
+
     for (size_t i = 0; i < kinds.size(); ++i) {
         const uint64_t physical = 0x40000000ULL + i * 4096ULL,
                        virtual_address = 0x1000000ULL + i * 4096ULL;
@@ -295,6 +322,7 @@ TEST_F(Tables, SeparateVirtualPhysicalAddressesEnforceUserWxAndPrivilegePermissi
         EXPECT_EQ((d & 0x80) != 0, i != 2);
         EXPECT_EQ(tables.descriptor(physical), 0U);
     }
+
     EXPECT_FALSE(tables.map_at(0, {0x40000000, 4096, false}, kinds[0]));
     EXPECT_FALSE(tables.map_at(0x1001, {0x40000000, 4096, false}, kinds[0]));
     EXPECT_FALSE(tables.map_at(arch::identity_limit - 4096, {0x40000000, 8192, false}, kinds[0]));
@@ -307,6 +335,7 @@ TEST_F(Tables, SeparateVirtualPhysicalAddressesEnforceUserWxAndPrivilegePermissi
     EXPECT_FALSE(tables.map({arch::physical_limit - 4096, 4096, false}, kinds[0]));
     tables.discard();
 }
+
 TEST_F(Tables, PrivateMappingCopiesPreservePermissionsAndNeverMutateSource) {
     ASSERT_TRUE(tables.initialize(memory));
     ASSERT_TRUE(tables.map({0x40200000, 4096, false}, arch::MappingKind::executable));
@@ -317,6 +346,7 @@ TEST_F(Tables, PrivateMappingCopiesPreservePermissionsAndNeverMutateSource) {
     ASSERT_TRUE(copy.initialize_copy(tables, memory));
     EXPECT_NE(copy.root(), tables.root());
     EXPECT_EQ(copy.count(), tables.count());
+
     for (uint64_t address : {0x40200000ULL, 0x40201000ULL, 0x40300000ULL})
         EXPECT_EQ(copy.descriptor(address), tables.descriptor(address));
     ASSERT_TRUE(
@@ -325,9 +355,11 @@ TEST_F(Tables, PrivateMappingCopiesPreservePermissionsAndNeverMutateSource) {
     copy.discard();
     EXPECT_NE(tables.descriptor(0x40200000), 0U);
     tables.discard();
+
     for (bool allocated : used)
         EXPECT_FALSE(allocated);
 }
+
 TEST_F(Tables, CopyExhaustionAndMalformedSourceRollBackOnlyOwnedTables) {
     ASSERT_TRUE(tables.initialize(memory));
     ASSERT_TRUE(tables.map({0x40200000, 4096, false}, arch::MappingKind::executable));
@@ -336,6 +368,7 @@ TEST_F(Tables, CopyExhaustionAndMalformedSourceRollBackOnlyOwnedTables) {
     EXPECT_FALSE(copy.initialize_copy(tables, memory));
     EXPECT_EQ(copy.root(), 0U);
     EXPECT_EQ(copy.count(), 0U);
+
     for (size_t i = 0; i < used.size(); ++i)
         EXPECT_EQ(used[i], i < 3);
     limit = 16;
@@ -351,6 +384,7 @@ TEST_F(Tables, CopyExhaustionAndMalformedSourceRollBackOnlyOwnedTables) {
     EXPECT_EQ(copy.root(), 0U);
     pages[middle][1] = leaf;
     tables.discard();
+
     for (bool allocated : used)
         EXPECT_FALSE(allocated);
 }
@@ -363,6 +397,7 @@ TEST_F(Tables, CopiesSealedKernelRootsAndRejectsUnreadableProvidersWithoutLeaks)
     unreadable_address = tables.root();
     EXPECT_FALSE(copy.initialize_copy(tables, memory));
     EXPECT_EQ(copy.root(), 0U);
+
     for (size_t i = 0; i < used.size(); ++i)
         EXPECT_EQ(used[i], i < 3);
     unreadable_address = 0;
@@ -375,9 +410,11 @@ TEST_F(Tables, CopiesSealedKernelRootsAndRejectsUnreadableProvidersWithoutLeaks)
         copy.map_at(0x1000000, {0x40400000, 4096, false}, arch::MappingKind::user_executable));
     EXPECT_EQ(tables.descriptor(0x1000000), 0U);
     copy.discard();
+
     for (size_t i = 0; i < used.size(); ++i)
         EXPECT_EQ(used[i], i < 3);
 }
+
 TEST_F(Tables, ExtraMmioPagesHaveDeviceEl1PermissionsAndCopyIntoPrivateRoots) {
     const kernel::MemoryRange extra[] = {{0xa000000, 0x4000, false}};
     layout.extra_devices = extra;
@@ -385,6 +422,7 @@ TEST_F(Tables, ExtraMmioPagesHaveDeviceEl1PermissionsAndCopyIntoPrivateRoots) {
     kernel::ReservationSet reservations;
     ASSERT_TRUE(tables.initialize(memory));
     ASSERT_EQ(platform::build_identity_map(tables, layout, reservations), nullptr);
+
     for (uint64_t offset = 0; offset < 0x4000; offset += 4096) {
         const auto descriptor = tables.descriptor(0xa000000 + offset);
         EXPECT_EQ(descriptor & arch::table_address_mask, 0xa000000 + offset);
@@ -393,12 +431,14 @@ TEST_F(Tables, ExtraMmioPagesHaveDeviceEl1PermissionsAndCopyIntoPrivateRoots) {
         EXPECT_NE(descriptor & (1ULL << 53), 0U);
         EXPECT_NE(descriptor & (1ULL << 54), 0U);
     }
+
     tables.seal();
     arch::PageTables copied;
     ASSERT_TRUE(copied.initialize_copy(tables, memory));
     EXPECT_EQ(copied.descriptor(0xa003000), tables.descriptor(0xa003000));
     copied.discard();
 }
+
 TEST_F(Tables, ExtraDeviceBoundsPageAliasesAndNoMapExclusionsRejectBeforeMapping) {
     kernel::MemoryRange extra{0xa000000, 0x4000, false};
     layout.extra_devices = &extra;
@@ -406,6 +446,7 @@ TEST_F(Tables, ExtraDeviceBoundsPageAliasesAndNoMapExclusionsRejectBeforeMapping
     kernel::ReservationSet reservations;
     ASSERT_TRUE(tables.initialize(memory));
     const auto valid = extra;
+
     for (auto invalid : {kernel::MemoryRange{0, 4096, false},
                          {1, 4096, false},
                          {0xa000000, 1, false},
@@ -416,6 +457,7 @@ TEST_F(Tables, ExtraDeviceBoundsPageAliasesAndNoMapExclusionsRejectBeforeMapping
         EXPECT_NE(platform::build_identity_map(tables, layout, reservations), nullptr);
         EXPECT_EQ(tables.descriptor(0x40000000), 0U);
     }
+
     extra = valid;
     ASSERT_TRUE(reservations.add({0xa001001, 1, true}));
     EXPECT_NE(platform::build_identity_map(tables, layout, reservations), nullptr);

@@ -12,6 +12,7 @@ fixture::Node cpu(uint32_t affinity) {
             {}};
 }
 } // namespace
+
 class CpusTest : public testing::Test {
   protected:
     fixture::Node root = {
@@ -22,18 +23,24 @@ class CpusTest : public testing::Test {
           {cpu(0)}}}};
     fixture::Bytes bytes;
     platform::CpuInventory inventory;
+
     fixture::Node &cpus() { return fixture::child(root, "cpus"); }
+
     fixture::Node &first() { return cpus().children.front(); }
+
     platform::CpuDiscoveryError discover(uint64_t boot = 0) {
         bytes = fixture::blob(root);
         fdt::View view;
         EXPECT_EQ(fdt::View::open({bytes.data(), bytes.size()}, view), fdt::Error::none);
+
         return platform::discover_cpus(view, boot, inventory);
     }
+
     void erase(fixture::Node &node, const char *name) {
         std::erase_if(node.properties, [name](const auto &item) { return item.name == name; });
     }
 };
+
 TEST_F(CpusTest, DefaultInventoryBorrowsCompatibility) {
     ASSERT_EQ(discover(), platform::CpuDiscoveryError::none);
     EXPECT_EQ(inventory.count, 1U);
@@ -44,18 +51,23 @@ TEST_F(CpusTest, DefaultInventoryBorrowsCompatibility) {
     EXPECT_GE(address, bytes.data());
     EXPECT_LT(address, bytes.data() + bytes.size());
 }
+
 TEST_F(CpusTest, OrderingAndNonzeroBootAffinity) {
     cpus().children = {cpu(3), cpu(1), cpu(2), cpu(0), {"cpu-map", {}, {}}, {"cache", {}, {}}};
+
     for (auto &node : cpus().children) {
         std::reverse(node.properties.begin(), node.properties.end());
     }
+
     ASSERT_EQ(discover(2), platform::CpuDiscoveryError::none);
     EXPECT_EQ(inventory.boot_index, 2U);
     EXPECT_EQ(inventory.count, 4U);
+
     for (size_t i = 0; i < inventory.count; ++i) {
         EXPECT_EQ(inventory.records[i].affinity, i);
     }
 }
+
 TEST_F(CpusTest, TwoCellAffinityAndReservedBits) {
     fixture::property(cpus(), "#address-cells") = fixture::cells({2});
     fixture::property(first(), "reg") = fixture::cells({0x12, 0x345678});
@@ -66,6 +78,7 @@ TEST_F(CpusTest, TwoCellAffinityAndReservedBits) {
     EXPECT_EQ(discover(), platform::CpuDiscoveryError::invalid_cpu);
     EXPECT_EQ(discover(UINT64_MAX), platform::CpuDiscoveryError::invalid_cpu);
 }
+
 TEST_F(CpusTest, DisabledRecordsRemainVisible) {
     cpus().children.push_back(cpu(1));
     cpus().children.back().properties.push_back({"status", fixture::strings({"disabled"})});
@@ -81,6 +94,7 @@ TEST_F(CpusTest, DisabledRecordsRemainVisible) {
     cpus().properties.push_back({"status", fixture::strings({"disabled"})});
     EXPECT_EQ(discover(), platform::CpuDiscoveryError::boot_cpu_disabled);
 }
+
 TEST_F(CpusTest, CompatibilityInheritanceAndCompleteListValidation) {
     erase(first(), "compatible");
     cpus().properties.push_back({"compatible", fixture::strings({"vendor,cpu", "arm,armv8"})});
@@ -93,6 +107,7 @@ TEST_F(CpusTest, CompatibilityInheritanceAndCompleteListValidation) {
     erase(cpus(), "compatible");
     EXPECT_EQ(discover(), platform::CpuDiscoveryError::invalid_cpu);
 }
+
 TEST_F(CpusTest, DuplicateNodesIdentitiesAndPropertiesAreRejected) {
     cpus().children.push_back(cpu(0));
     EXPECT_EQ(discover(), platform::CpuDiscoveryError::ambiguous);
@@ -106,6 +121,7 @@ TEST_F(CpusTest, DuplicateNodesIdentitiesAndPropertiesAreRejected) {
     root.children.push_back(cpus());
     EXPECT_EQ(discover(), platform::CpuDiscoveryError::ambiguous);
 }
+
 TEST_F(CpusTest, RequiredTypeRegAndStatusAreValidated) {
     erase(first(), "device_type");
     EXPECT_EQ(discover(), platform::CpuDiscoveryError::invalid_cpu);
@@ -120,15 +136,18 @@ TEST_F(CpusTest, RequiredTypeRegAndStatusAreValidated) {
     first().properties.push_back({"status", fixture::strings({"okay", "disabled"})});
     EXPECT_EQ(discover(), platform::CpuDiscoveryError::invalid_cpu);
 }
+
 TEST_F(CpusTest, CapacityBoundaryIncludesDisabledNodes) {
     for (uint32_t i = 1; i < 8; ++i) {
         cpus().children.push_back(cpu(i));
     }
+
     EXPECT_EQ(discover(), platform::CpuDiscoveryError::none);
     cpus().children.push_back(cpu(8));
     EXPECT_EQ(discover(), platform::CpuDiscoveryError::capacity_exceeded);
     EXPECT_EQ(inventory.count, 0U);
 }
+
 TEST_F(CpusTest, MissingAndUnsupportedLayoutsDoNotExposeStaleInventory) {
     ASSERT_EQ(discover(), platform::CpuDiscoveryError::none);
     EXPECT_EQ(discover(1), platform::CpuDiscoveryError::boot_cpu_missing);

@@ -5,22 +5,28 @@
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
+
 namespace {
 struct Field {
     size_t offset;
     uint64_t value;
     unsigned width;
 };
+
 struct TestSegment {
     uint64_t address, offset, file, memory, flags;
 };
+
 struct Image {
     std::vector<uint8_t> bytes = std::vector<uint8_t>(0x2200, 0);
+
     void set(Field f) {
         ASSERT_LE(f.offset + f.width, bytes.size());
+
         for (unsigned i = 0; i < f.width; ++i)
             bytes[f.offset + i] = static_cast<uint8_t>(f.value >> (i * 8));
     }
+
     Image() {
         bytes[0] = 0x7f;
         bytes[1] = 'E';
@@ -29,6 +35,7 @@ struct Image {
         bytes[4] = 2;
         bytes[5] = 1;
         bytes[6] = 1;
+
         for (auto f : {Field{16, 2, 2},
                        {18, 183, 2},
                        {20, 1, 4},
@@ -40,14 +47,18 @@ struct Image {
             set(f);
         segment(0, {0x1000000, 0x1000, 16, 32, 5});
         segment(1, {0x1006000, 0x2000, 4, 8192, 6});
+
         for (size_t i = 0; i < 16; ++i)
             bytes[0x1000 + i] = static_cast<uint8_t>(i + 1);
+
         for (size_t i = 0; i < 4; ++i)
             bytes[0x2000 + i] = static_cast<uint8_t>(i + 33);
     }
+
     // Field records keep offsets, sizes, and values unambiguous in malformed fixtures.
     void segment(size_t index, TestSegment s) {
         size_t at = 64 + index * 56;
+
         for (auto f : {Field{at, 1, 4},
                        {at + 4, s.flags, 4},
                        {at + 8, s.offset, 8},
@@ -58,12 +69,16 @@ struct Image {
                        {at + 48, 4096, 8}})
             set(f);
     }
+
     elf::Bytes span() const { return {bytes.data(), bytes.size()}; }
 };
+
 elf::Error open(const Image &image) {
     elf::View view;
+
     return view.open(image.span(), arch::user_elf_policy());
 }
+
 struct Memory {
     static constexpr uint64_t base = 0x50000000;
     std::array<uint8_t, size_t{16} * 4096> bytes{};
@@ -74,33 +89,44 @@ struct Memory {
         this,
         [](void *p, size_t pages, uint64_t &physical) {
             auto &m = *static_cast<Memory *>(p);
+
             if (++m.allocations == m.fail_allocate)
                 return false;
+
             for (size_t i = 0; i + pages <= m.owned.size(); ++i) {
                 if (std::any_of(m.owned.begin() + i, m.owned.begin() + i + pages,
                                 [](bool v) { return v; }))
                     continue;
+
                 for (size_t j = 0; j < pages; ++j)
                     m.owned[i + j] = true;
                 physical = base + i * 4096;
+
                 return true;
             }
+
             return false;
         },
         [](void *p, const elf::Initialization &init) {
             auto &m = *static_cast<Memory *>(p);
+
             if (++m.initializations == m.fail_initialize)
                 return false;
+
             auto first = static_cast<size_t>(init.physical - base);
+
             if (first > m.bytes.size() || init.size > m.bytes.size() - first ||
                 init.offset > init.size || init.data.size > init.size - init.offset)
                 return false;
+
             std::fill_n(m.bytes.begin() + first, init.size, 0);
             std::copy_n(init.data.data, init.data.size, m.bytes.begin() + first + init.offset);
+
             return true;
         },
         [](void *p, const elf::Region &) {
             auto &m = *static_cast<Memory *>(p);
+
             return ++m.mappings != m.fail_map;
         },
         [](void *p, const elf::Region &) { ++static_cast<Memory *>(p)->unmaps; },
@@ -109,17 +135,21 @@ struct Memory {
             ++m.releases;
             size_t first = static_cast<size_t>((allocation.physical - base) / 4096);
             ASSERT_LE(first + allocation.pages, m.owned.size());
+
             for (size_t i = 0; i < allocation.pages; ++i) {
                 EXPECT_TRUE(m.owned[first + i]);
                 m.owned[first + i] = false;
             }
         }};
+
     Memory() { bytes.fill(0xcc); }
+
     bool empty() const {
         return std::none_of(owned.begin(), owned.end(), [](bool v) { return v; });
     }
 };
 } // namespace
+
 TEST(ElfView, UnalignedBorrowedBytesSectionsOptionalAndResetOnFailure) {
     Image image;
     elf::View v;
@@ -147,17 +177,21 @@ TEST(ElfView, UnalignedBorrowedBytesSectionsOptionalAndResetOnFailure) {
     EXPECT_EQ(v.bytes().data, nullptr);
     EXPECT_EQ(v.open({nullptr, 64}, arch::user_elf_policy()), elf::Error::bad_header);
 }
+
 TEST(ElfView, EveryTruncationAndOversizedInput) {
     Image image;
     elf::View v;
+
     for (size_t size = 0; size < 0x2004; ++size) {
         EXPECT_NE(v.open({image.bytes.data(), size}, arch::user_elf_policy()), elf::Error::none)
             << size;
         EXPECT_EQ(v.count(), 0U);
     }
+
     EXPECT_EQ(v.open({image.bytes.data(), 1024 * 1024 + 1}, arch::user_elf_policy()),
               elf::Error::capacity);
 }
+
 TEST(ElfView, HeaderAndTableBoundsUnsupportedFormatsAndOverflow) {
     for (auto field :
          {Field{4, 1, 1}, {5, 2, 1},   {6, 2, 1},     {7, 3, 1},   {8, 1, 1},
@@ -168,8 +202,10 @@ TEST(ElfView, HeaderAndTableBoundsUnsupportedFormatsAndOverflow) {
         image.set(field);
         EXPECT_NE(open(image), elf::Error::none) << field.offset;
     }
+
     Image image;
     elf::View v;
+
     for (auto p : {elf::Policy{0, 4096, 0, 0},
                    {1, 8192, 0, 0},
                    {8192, 4096, 0, 0},
@@ -177,6 +213,7 @@ TEST(ElfView, HeaderAndTableBoundsUnsupportedFormatsAndOverflow) {
                    {4096, 8192, 2, 1}})
         EXPECT_EQ(v.open(image.span(), p), elf::Error::bad_address);
 }
+
 TEST(ElfView, SegmentBoundsAlignmentPermissionsEntryAndRuntimeRequirements) {
     for (auto field : {Field{64, 2, 4},
                        {64, 3, 4},
@@ -201,11 +238,13 @@ TEST(ElfView, SegmentBoundsAlignmentPermissionsEntryAndRuntimeRequirements) {
         image.set(field);
         EXPECT_NE(open(image), elf::Error::none) << field.offset;
     }
+
     for (uint64_t align : {0ULL, 1ULL, 4096ULL}) {
         Image image;
         image.set({112, align, 8});
         EXPECT_EQ(open(image), elf::Error::none);
     }
+
     Image image;
     image.set({64 + 16, 0x1000100, 8});
     image.set({64 + 8, 0x1100, 8});
@@ -214,6 +253,7 @@ TEST(ElfView, SegmentBoundsAlignmentPermissionsEntryAndRuntimeRequirements) {
     image.set({64 + 40, 0, 8});
     EXPECT_NE(open(image), elf::Error::none);
 }
+
 TEST(ElfView, SegmentAndPageCapacityZeroLoadAndNonExecutableStack) {
     Image image;
     image.set({56, 3, 2});
@@ -231,10 +271,12 @@ TEST(ElfView, SegmentAndPageCapacityZeroLoadAndNonExecutableStack) {
     EXPECT_EQ(open(image), elf::Error::none);
     image = Image{};
     image.set({56, 5, 2});
+
     for (size_t i = 2; i < 5; ++i)
         image.segment(i, {0x1010000 + i * 4096, 0x2000, 0, 4096, 4});
     EXPECT_EQ(open(image), elf::Error::capacity);
 }
+
 TEST(ElfView, SectionBoundsNamesRelocationsTlsAndInitialization) {
     Image image;
     image.set({40, 0x2100, 8});
@@ -245,6 +287,7 @@ TEST(ElfView, SectionBoundsNamesRelocationsTlsAndInitialization) {
     image.set({0x2140 + 24, 0x21c0, 8});
     image.set({0x2140 + 32, 4, 8});
     EXPECT_EQ(open(image), elf::Error::none);
+
     for (auto f : {Field{0x2140, 4, 4},
                    {0x21c3, 1, 1},
                    {0x2140 + 24, UINT64_MAX, 8},
@@ -258,15 +301,19 @@ TEST(ElfView, SectionBoundsNamesRelocationsTlsAndInitialization) {
         malformed.set(f);
         EXPECT_NE(open(malformed), elf::Error::none) << f.offset;
     }
+
     image.set({62, 0, 2});
+
     for (uint64_t type : {6ULL, 14ULL, 15ULL, 16ULL, 4ULL, 9ULL}) {
         auto malformed = image;
         malformed.set({0x2140 + 4, type, 4});
         EXPECT_EQ(open(malformed), elf::Error::unsupported);
     }
+
     image.set({0x2140 + 8, 0x400, 8});
     EXPECT_EQ(open(image), elf::Error::unsupported);
 }
+
 TEST(ElfLoader, FreshOwnershipZeroPaddingBssPermissionsAndIdempotentDiscard) {
     Image image;
     image.set({64 + 16, 0x1000100, 8});
@@ -305,18 +352,23 @@ TEST(ElfLoader, FreshOwnershipZeroPaddingBssPermissionsAndIdempotentDiscard) {
     loaded.discard();
     EXPECT_TRUE(m.empty());
 }
+
 TEST(ElfLoader, AllocationInitializationAndPartialMappingFailuresRollBack) {
     Image image;
     elf::View view;
     ASSERT_EQ(view.open(image.span(), arch::user_elf_policy()), elf::Error::none);
+
     for (size_t fail = 1; fail <= 2; ++fail) {
         for (unsigned kind = 0; kind < 3; ++kind) {
             Memory m;
             elf::Loaded loaded;
+
             if (kind == 0)
                 m.fail_allocate = fail;
+
             if (kind == 1)
                 m.fail_initialize = fail;
+
             if (kind == 2)
                 m.fail_map = fail;
             auto expected = kind == 0   ? elf::Error::allocation
@@ -333,6 +385,7 @@ TEST(ElfLoader, AllocationInitializationAndPartialMappingFailuresRollBack) {
             EXPECT_TRUE(m.empty());
         }
     }
+
     Memory m;
     elf::Loaded loaded;
     elf::View invalid;
@@ -343,6 +396,7 @@ TEST(ElfLoader, AllocationInitializationAndPartialMappingFailuresRollBack) {
     EXPECT_EQ(loaded.load(view, missing), elf::Error::bad_header);
     EXPECT_EQ(m.allocations, 0U);
 }
+
 TEST(ElfMonitor, ExactRenderingAndCommandUsage) {
     Image image;
     elf::View view;
@@ -356,6 +410,7 @@ TEST(ElfMonitor, ExactRenderingAndCommandUsage) {
                       "elf[1]: va=0x0000000001006000 file=4 memory=8192 permissions=rw-\n");
     EXPECT_EQ(kernel::parse_command({"elf", 3}).kind, kernel::CommandKind::elf);
     EXPECT_EQ(kernel::parse_command({" elf test  ", 11}).kind, kernel::CommandKind::elf_test);
+
     for (const std::string command : {"elf x", "elf test x", "elf testtest"}) {
         output.clear();
         kernel::render_text_command(writer,
@@ -363,20 +418,25 @@ TEST(ElfMonitor, ExactRenderingAndCommandUsage) {
         EXPECT_EQ(output, "usage: elf [test]\n");
     }
 }
+
 TEST(ElfView, MutatedHeaderAndProgramBytesRemainBoundedUnderSanitizers) {
     const Image original;
+
     for (size_t offset = 0; offset < 176; ++offset) {
         for (unsigned bit = 0; bit < 8; ++bit) {
             auto image = original;
             image.bytes[offset] ^= static_cast<uint8_t>(1U << bit);
             elf::View view;
             const auto error = view.open(image.span(), arch::user_elf_policy());
+
             if (error != elf::Error::none) {
                 EXPECT_EQ(view.count(), 0U);
                 continue;
             }
+
             EXPECT_LE(view.count(), elf::segment_capacity);
             EXPECT_LE(view.pages(), elf::page_budget);
+
             for (size_t i = 0; i < view.count(); ++i) {
                 const auto &s = *view.segment(i);
                 EXPECT_LE(s.offset, image.bytes.size());
@@ -387,27 +447,33 @@ TEST(ElfView, MutatedHeaderAndProgramBytesRemainBoundedUnderSanitizers) {
         }
     }
 }
+
 TEST(ElfLoader, RejectInvalidAllocatedExtentsBeforeInitializationAndReleaseOwnership) {
     Image image;
     elf::View view;
     ASSERT_EQ(view.open(image.span(), arch::user_elf_policy()), elf::Error::none);
+
     struct State {
         uint64_t physical;
         size_t released;
     };
+
     for (uint64_t physical : std::array<uint64_t, 3>{0, 1, UINT64_MAX - 4095}) {
         State state{physical, 0};
         elf::LoadMemory memory{&state,
                                [](void *p, size_t, uint64_t &address) {
                                    address = static_cast<State *>(p)->physical;
+
                                    return true;
                                },
                                [](void *, const elf::Initialization &) {
                                    ADD_FAILURE() << "Invalid allocation was initialized";
+
                                    return false;
                                },
                                [](void *, const elf::Region &) {
                                    ADD_FAILURE() << "Invalid allocation was mapped";
+
                                    return false;
                                },
                                [](void *, const elf::Region &) {

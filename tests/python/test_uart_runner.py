@@ -64,6 +64,7 @@ class UartRunnerTests(unittest.TestCase):
             'os.write(1, b"mini-os: boot OK',
             'os.write(1, b"mini-os: "); time.sleep(0.02); os.write(1, b"boot OK',
         ))
+
         self.assertTrue(result.success, result.reason)
         self.assertIn(b"echo: ad\r\n", result.stdout)
         self.assertIn(b"mini-os: line too long", result.stdout)
@@ -74,6 +75,7 @@ class UartRunnerTests(unittest.TestCase):
             "os.write(1, " + repr(qemu.READY) + ")\n"
             "os.read(0, 1)\nprint('mini-os: boot FAIL: receive', flush=True)\ntime.sleep(30)\n"
         )
+
         self.assertFalse(result.success)
         self.assertIn("Kernel reported boot failure", result.reason)
 
@@ -82,6 +84,7 @@ class UartRunnerTests(unittest.TestCase):
             "os.write(1, " + repr(qemu.READY) + ")\n"
             "os.read(0, 1)\nos.write(1, b'wrong')\ntime.sleep(30)\n"
         )
+
         self.assertFalse(result.success)
         self.assertIn("Incorrect UART response", result.reason)
 
@@ -89,11 +92,13 @@ class UartRunnerTests(unittest.TestCase):
         result = self.run_fake(
             "os.close(0)\nos.write(1, " + repr(qemu.READY) + ")\ntime.sleep(30)\n"
         )
+
         self.assertFalse(result.success)
         self.assertIn("closed serial stdin", result.reason)
 
     def test_uart_early_exit(self):
         result = self.run_fake("os.write(1, " + repr(qemu.READY) + ")\nsys.exit(7)\n")
+
         self.assertFalse(result.success)
         self.assertIn("exited prematurely", result.reason)
 
@@ -103,21 +108,25 @@ class UartRunnerTests(unittest.TestCase):
             "os.write(1, " + repr(qemu.READY) + ")\nos.read(0, 1)\ntime.sleep(30)\n",
             timeout=0.3,
         )
+
         self.assertFalse(result.success)
         self.assertIn("Timed out", result.reason)
 
     def test_partial_readiness(self):
         result = self.run_fake("os.write(1, " + repr(qemu.READY[:-1]) + ")\ntime.sleep(30)\n", timeout=0.3)
+
         self.assertFalse(result.success)
         self.assertIn("readiness", result.reason)
 
     def test_stderr_is_drained_during_exchanges(self):
         result = self.run_fake("os.write(2, b'diagnostic' * 20000)\n" + CONSOLE)
+
         self.assertTrue(result.success, result.reason)
         self.assertEqual(result.stderr, b"diagnostic" * 20000)
 
     def test_stderr_readiness_cannot_start_protocol(self):
         result = self.run_fake("os.write(2, " + repr(qemu.READY) + ")\ntime.sleep(30)\n", timeout=0.3)
+
         self.assertFalse(result.success)
         self.assertEqual(result.stdout, b"")
 
@@ -126,9 +135,11 @@ class UartRunnerTests(unittest.TestCase):
             "os.write(1, " + repr(b"".join(expected for _, _, expected in qemu.uart_exchanges())) + ")\n"
             "time.sleep(30)\n", timeout=0.3
         )
+
         self.assertFalse(result.success)
 
     def test_duplicate_crlf_submission_is_rejected(self):
         result = self.run_fake(CONSOLE.replace("cr = byte == 13", "cr = False"))
+
         self.assertFalse(result.success)
         self.assertIn("Incorrect UART response", result.reason)

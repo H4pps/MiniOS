@@ -5,6 +5,7 @@
 #include "mini_os/smp.h"
 #include <gtest/gtest.h>
 #include <string>
+
 namespace {
 fixture::Node cpu(uint32_t affinity) {
     return {"cpu@" + std::to_string(affinity),
@@ -15,6 +16,7 @@ fixture::Node cpu(uint32_t affinity) {
             {}};
 }
 } // namespace
+
 class PsciDiscovery : public testing::Test {
   protected:
     fixture::Node root{
@@ -30,15 +32,19 @@ class PsciDiscovery : public testing::Test {
     platform::PsciResources resources;
     platform::CpuInventory inventory;
     fixture::Bytes bytes;
+
     const char *discover(uint64_t boot = 0) {
         bytes = fixture::blob(root);
         fdt::View view;
         EXPECT_EQ(fdt::View::open({bytes.data(), bytes.size()}, view), fdt::Error::none);
+
         if (platform::discover_cpus(view, boot, inventory) != platform::CpuDiscoveryError::none)
             return "CPU error";
+
         return platform::discover_psci(view, inventory, resources);
     }
 };
+
 TEST_F(PsciDiscovery, ModernCompatibilityMethodsAndNonzeroBoot) {
     ASSERT_EQ(discover(1), nullptr);
     EXPECT_EQ(resources.method, arch::PsciMethod::hvc);
@@ -48,6 +54,7 @@ TEST_F(PsciDiscovery, ModernCompatibilityMethodsAndNonzeroBoot) {
     EXPECT_EQ(discover(), nullptr);
     EXPECT_EQ(resources.method, arch::PsciMethod::smc);
 }
+
 TEST_F(PsciDiscovery, MissingDisabledDuplicateNestedAndMalformedProviders) {
     const auto original = root.children;
     root.children.erase(root.children.begin());
@@ -71,14 +78,17 @@ TEST_F(PsciDiscovery, MissingDisabledDuplicateNestedAndMalformedProviders) {
     fixture::property(root.children[0], "compatible") = fixture::strings({"arm,psci"});
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST_F(PsciDiscovery, MalformedMethodsAndEnabledSecondaryRequirements) {
     const auto original = root.children;
+
     for (const auto &value :
          {fixture::strings({"unknown"}), fixture::strings({"hvc", "smc"}), fixture::Bytes{}}) {
         root.children = original;
         fixture::property(root.children[0], "method") = value;
         EXPECT_NE(discover(), nullptr);
     }
+
     root.children = original;
     root.children[0].properties.push_back({"method", fixture::strings({"hvc"})});
     EXPECT_NE(discover(), nullptr);
@@ -101,12 +111,15 @@ TEST_F(PsciDiscovery, MalformedMethodsAndEnabledSecondaryRequirements) {
     fixture::property(root.children[1].children[1], "reg") = fixture::cells({16});
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST(SmpSlots, BootSlotZeroDisabledHolesCapacityAndIdentityValidation) {
     platform::CpuInventory inventory{8, 7, 4, {}};
+
     for (size_t i = 0; i < 8; ++i) {
         inventory.records[i].affinity = i;
         inventory.records[i].enabled = i != 2;
     }
+
     platform::CpuSlots slots;
     ASSERT_TRUE(platform::assign_cpu_slots(inventory, slots));
     EXPECT_EQ(slots.count, 7U);
@@ -114,6 +127,7 @@ TEST(SmpSlots, BootSlotZeroDisabledHolesCapacityAndIdentityValidation) {
     EXPECT_EQ(slots.slot_to_cpu[0], 4U);
     EXPECT_EQ(slots.cpu_to_slot[2], 8U);
     EXPECT_EQ(slots.cpu_to_slot[0], 1U);
+
     for (size_t s = 0; s < slots.count; ++s)
         EXPECT_EQ(slots.cpu_to_slot[slots.slot_to_cpu[s]], s);
     inventory.enabled_count = 8;
@@ -134,19 +148,24 @@ TEST(SmpSlots, BootSlotZeroDisabledHolesCapacityAndIdentityValidation) {
     inventory.count = 0;
     EXPECT_FALSE(platform::assign_cpu_slots(inventory, slots));
 }
+
 TEST(SmpArchitecture, GuardedStackBoundariesAndOverflow) {
     const uint64_t base = 0x40200000, size = 8 * arch::secondary_stack_stride;
+
     for (size_t i = 0; i < 8; ++i)
         EXPECT_EQ(arch::secondary_stack_top({base, size}, i),
                   base + (i + 1) * arch::secondary_stack_stride);
+
     for (const auto start : {0ULL, 0x40200001ULL, 0xfffffffffffff000ULL})
         EXPECT_EQ(arch::secondary_stack_top({start, size}, 0), 0U);
     EXPECT_EQ(arch::secondary_stack_top({base, size - 4096}, 0), 0U);
     EXPECT_EQ(arch::secondary_stack_top({base, size}, 8), 0U);
 }
+
 TEST(SmpArchitecture, SgiPackingAffinitiesIdsAndUnsupportedRanges) {
     for (uint32_t id : {0U, 1U, 1019U, 1024U, 8192U, UINT32_MAX})
         EXPECT_FALSE(drivers::gicv3::is_spurious(id));
+
     for (uint32_t id = 1020; id <= 1023; ++id)
         EXPECT_TRUE(drivers::gicv3::is_spurious(id));
     uint64_t value = 0;
@@ -158,6 +177,7 @@ TEST(SmpArchitecture, SgiPackingAffinitiesIdsAndUnsupportedRanges) {
     EXPECT_FALSE(arch::sgi_target({1ULL << 24, 1}, value));
     EXPECT_FALSE(arch::sgi_target({0, 16}, value));
 }
+
 TEST(SmpMonitor, ParsingUsageAndExactOnlineVersusAvailableReport) {
     EXPECT_EQ(kernel::parse_command({"smp test  ", 10}).kind, kernel::CommandKind::smp_test);
     EXPECT_EQ(kernel::parse_command({"smp  ", 5}).kind, kernel::CommandKind::smp);

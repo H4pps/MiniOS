@@ -4,6 +4,7 @@
 #include "mini_os/timer_resources.h"
 #include <gtest/gtest.h>
 #include <string>
+
 TEST(Timer, FrequencyRoundingAndRejectedConfiguration) {
     kernel::TimerState state{};
     EXPECT_FALSE(kernel::prepare_timer(state, {0}, 0));
@@ -15,6 +16,7 @@ TEST(Timer, FrequencyRoundingAndRejectedConfiguration) {
     ASSERT_TRUE(kernel::prepare_timer(state, {101}, 0));
     EXPECT_EQ(state.interval, 2U);
 }
+
 TEST(Timer, DeadlinesSkipMissedPeriodsAndDoNotRearmEarly) {
     kernel::TimerState state{};
     ASSERT_TRUE(kernel::prepare_timer(state, {1000}, 0));
@@ -29,6 +31,7 @@ TEST(Timer, DeadlinesSkipMissedPeriodsAndDoNotRearmEarly) {
     EXPECT_EQ(state.ticks, 2U);
     EXPECT_FALSE(kernel::advance_timer(state, 49));
 }
+
 TEST(Timer, ModularWrapAndSaturatingStatistics) {
     kernel::TimerState state{};
     ASSERT_TRUE(kernel::prepare_timer(state, {500}, UINT64_MAX - 9));
@@ -41,6 +44,7 @@ TEST(Timer, ModularWrapAndSaturatingStatistics) {
     EXPECT_EQ(state.ticks, UINT64_MAX);
     EXPECT_EQ(state.missed, UINT64_MAX);
 }
+
 TEST(Timer, SnapshotRenderingIsExactAndDoesNotMutateState) {
     std::string output;
     kernel::TextWriter writer([](void *p, char c) { static_cast<std::string *>(p)->push_back(c); },
@@ -51,6 +55,7 @@ TEST(Timer, SnapshotRenderingIsExactAndDoesNotMutateState) {
                       "ticks=18446744073709551615 missed=2\n");
     EXPECT_EQ(stats.counter, 123456U);
 }
+
 class TimerDiscovery : public testing::Test {
   protected:
     fixture::Node root{"",
@@ -61,6 +66,7 @@ class TimerDiscovery : public testing::Test {
                           {"interrupts", fixture::cells({1, 13, 4, 1, 14, 4, 1, 11, 4, 1, 10, 4})}},
                          {}}}};
     platform::TimerResources resources{};
+
     const char *discover() {
         const auto bytes = fixture::blob(root);
         fdt::View view;
@@ -68,10 +74,13 @@ class TimerDiscovery : public testing::Test {
         platform::GicResources gic{};
         gic.phandle = 10;
         EXPECT_EQ(view.find_node(fdt::String::literal("/intc"), gic.node), fdt::Error::none);
+
         return platform::discover_timer(view, gic, resources);
     }
+
     fixture::Node &timer() { return root.children[1]; }
 };
+
 TEST_F(TimerDiscovery, InheritanceNamesAndExtendedReferences) {
     ASSERT_EQ(discover(), nullptr);
     EXPECT_EQ(resources.interrupt_id, 30U);
@@ -84,6 +93,7 @@ TEST_F(TimerDiscovery, InheritanceNamesAndExtendedReferences) {
     EXPECT_TRUE(resources.has_frequency);
     EXPECT_EQ(resources.declared_frequency, 62500000U);
 }
+
 TEST_F(TimerDiscovery, DisabledDuplicateParentsAndConflictingProperties) {
     timer().properties.push_back({"status", fixture::strings({"disabled"})});
     EXPECT_NE(discover(), nullptr);
@@ -98,8 +108,10 @@ TEST_F(TimerDiscovery, DisabledDuplicateParentsAndConflictingProperties) {
         {"interrupts-extended", fixture::cells({10, 1, 14, 4, 10, 1, 11, 4})});
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST_F(TimerDiscovery, MalformedPpiFlagsNamesFrequencyAndPhandles) {
     const auto valid = fixture::property(timer(), "interrupts");
+
     for (const auto &bytes : {fixture::cells({1, 13, 4, 0, 14, 4, 1, 11, 4}),
                               fixture::cells({1, 13, 4, 1, 16, 4, 1, 11, 4}),
                               fixture::cells({1, 13, 4, 1, 14, 1, 1, 11, 4}),
@@ -107,6 +119,7 @@ TEST_F(TimerDiscovery, MalformedPpiFlagsNamesFrequencyAndPhandles) {
         fixture::property(timer(), "interrupts") = bytes;
         EXPECT_NE(discover(), nullptr);
     }
+
     fixture::property(timer(), "interrupts") = valid;
     timer().properties.push_back(
         {"interrupt-names", fixture::strings({"phys", "phys", "virt", "hyp"})});

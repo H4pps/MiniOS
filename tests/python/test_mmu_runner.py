@@ -1,4 +1,5 @@
 """Identity translation, data-abort context and process cleanup protocols."""
+
 import functools
 import os
 import subprocess
@@ -6,6 +7,7 @@ import unittest
 from unittest.mock import patch
 import test_boot_runner
 import test_memory_runner
+
 qemu = test_boot_runner.qemu
 SYMBOLS = {'mini_os_fault_unmapped_site':0x40200300,'mini_os_fault_readonly_site':0x40200400,
            'mini_os_readonly_probe':0x40201000,'__stack_bottom':0x40210000,'__stack_top':0x40220000}
@@ -34,28 +36,42 @@ CONSOLE = 'timer_ticks=0\n' + test_memory_runner.CONSOLE.replace("if command == 
         for value in response+report.encode(): os.write(1,bytes([value]))
         time.sleep(30)
     elif command == b'mem':''')
+
+
 class MmuRunnerTests(unittest.TestCase):
     def run_fake(self,body,timeout=7):
         return test_boot_runner.BootRunnerTests.run_fake(self,body,timeout,
             runner=qemu.mmu_test,
             command_args=('-cpu','cortex-a53','-smp','1','-m','128M'))
+
     def test_fragmentation_both_models_ram_sizes_and_all_children_reaped(self):
         processes=[];popen=subprocess.Popen
+
         def launch(*args,**kwargs):
             process=popen(*args,**kwargs);processes.append(process);return process
+
         with patch.object(qemu.subprocess,'Popen',side_effect=launch):result=self.run_fake(CONSOLE)
+
         self.assertTrue(result.success,result.reason);self.assertEqual(len(processes),6)
+
         for process in processes:
             with self.assertRaises(ChildProcessError):os.waitpid(process.pid,os.WNOHANG)
+
             with self.assertRaises(ProcessLookupError):os.kill(process.pid,0)
+
     def test_incorrect_state_and_permissions(self):
         for old,new in (('00cd0839','00cd0838'),('text-write=denied','text-write=allowed')):
             result=self.run_fake(CONSOLE.replace(old,new));self.assertFalse(result.success)
+
     def test_incomplete_report_closed_input_timeout_and_diagnostics(self):
         for body in ('os.close(0)\nos.write(1,'+repr(qemu.READY)+')\ntime.sleep(30)',CONSOLE.replace("response += b'mini-os> '","time.sleep(30)")):
             result=self.run_fake(body,timeout=1);self.assertFalse(result.success)
+
         result=self.run_fake('signal.signal(signal.SIGTERM,signal.SIG_IGN);time.sleep(30)',timeout=1)
+
         self.assertFalse(result.success);self.assertIn('Timed out',result.reason)
+
     def test_stderr_draining(self):
         result=self.run_fake(CONSOLE.replace("response += b'mini-os> '","os.write(2,b'diagnostic'*10000);response += b'mini-os> '"))
+
         self.assertTrue(result.success,result.reason);self.assertGreater(len(result.stderr),100000)

@@ -1,4 +1,5 @@
 """Monitor protocols with independent disposable processes and decoded-state checks."""
+
 import os
 import subprocess
 import unittest
@@ -54,18 +55,25 @@ class MonitorRunnerTests(unittest.TestCase):
     def test_fragmented_reports_all_models_and_process_cleanup(self):
         processes = []
         real_popen = subprocess.Popen
+
         def launch(*args, **kwargs):
             process = real_popen(*args, **kwargs)
+
             processes.append(process)
+
             return process
+
         with patch.object(qemu.subprocess, "Popen", side_effect=launch):
             result = self.run_fake(CONSOLE)
+
         self.assertTrue(result.success, result.reason)
         self.assertEqual(len(processes), 3)
         self.assertIn(b"discovered=4", result.stdout)
         self.assertIn(b"model=Cortex-A57", result.stdout)
+
         for process in processes:
             with self.assertRaises(ChildProcessError): os.waitpid(process.pid, os.WNOHANG)
+
             with self.assertRaises(ProcessLookupError): os.kill(process.pid, 0)
 
     def test_incorrect_counts_and_decoded_fields(self):
@@ -74,12 +82,14 @@ class MonitorRunnerTests(unittest.TestCase):
                          ("MMU=on", "MMU=off"), ("boot=0", "boot=1")):
             with self.subTest(field=old):
                 result = self.run_fake(CONSOLE.replace(old, new))
+
                 self.assertFalse(result.success)
                 self.assertIn("Incorrect CPU report", result.reason)
 
     def test_partial_report_times_out_and_preserves_output(self):
         body = CONSOLE.replace("response += report.encode()", "os.write(1, b'\\r\\ncpu: discovered='); time.sleep(30)")
         result = self.run_fake(body, timeout=1)
+
         self.assertFalse(result.success)
         self.assertIn("Timed out", result.reason)
         self.assertIn(b"cpu: discovered=", result.stdout)
@@ -87,18 +97,21 @@ class MonitorRunnerTests(unittest.TestCase):
     def test_premature_exit_preserves_diagnostics(self):
         body = CONSOLE.replace("response += report.encode()", "os.write(2, b'CPU failure\\n'); sys.exit(7)")
         result = self.run_fake(body)
+
         self.assertFalse(result.success)
         self.assertIn("exited prematurely", result.reason)
         self.assertIn(b"CPU failure", result.stderr)
 
     def test_stderr_is_drained_during_reports(self):
         result = self.run_fake(CONSOLE.replace("response += report.encode()", "os.write(2, b'diagnostic' * 20000); response += report.encode()"))
+
         self.assertTrue(result.success, result.reason)
         self.assertEqual(result.stderr, b"diagnostic" * 20000 * 6)
 
     def test_overall_deadline_and_forced_cleanup(self):
         body = "if '4' in sys.argv: signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)\n" + CONSOLE
         result = self.run_fake(body, timeout=1)
+
         self.assertFalse(result.success)
         self.assertIn("4 CPU(s)", result.reason)
         self.assertIn("Timed out", result.reason)

@@ -5,7 +5,9 @@
 #include <array>
 #include <gtest/gtest.h>
 #include <string>
+
 using kernel::MemoryRange;
+
 TEST(Reservations, CoalesceSortNoMapCapacityAndOverflow) {
     kernel::ReservationSet r;
     ASSERT_TRUE(r.add({0x8000, 0x1000, false}));
@@ -17,6 +19,7 @@ TEST(Reservations, CoalesceSortNoMapCapacityAndOverflow) {
     EXPECT_FALSE(r.excludes(0xa000));
     EXPECT_FALSE(r.add({UINT64_MAX, 2, false}));
     EXPECT_FALSE(r.add({0, 0, false}));
+
     for (uint64_t i = 0; i < 31; ++i)
         ASSERT_TRUE(r.add({0x10000 + i * 0x2000, 0x1000, false}));
     EXPECT_FALSE(r.add({0x90000, 0x1000, false}));
@@ -24,6 +27,7 @@ TEST(Reservations, CoalesceSortNoMapCapacityAndOverflow) {
     ASSERT_TRUE(r.add({0x10000, 0x3f000, false}));
     EXPECT_LT(r.count, 32U);
 }
+
 class Pages : public testing::Test {
   protected:
     kernel::ReservationSet reserved;
@@ -32,11 +36,13 @@ class Pages : public testing::Test {
     MemoryRange ram{0x1000, 0x10000, false};
     kernel::PageAllocator allocator;
     std::array<uint8_t, 32> bits{};
+
     void initialize() {
         ASSERT_EQ(kernel::plan_memory(ram, reserved, boot, plan), nullptr);
         ASSERT_TRUE(allocator.initialize(plan, reserved, {bits.data(), bits.size()}));
     }
 };
+
 TEST_F(Pages, MetadataPlacementAndAccounting) {
     ASSERT_TRUE(reserved.add({0x4000, 0x1001, false}));
     initialize();
@@ -49,10 +55,12 @@ TEST_F(Pages, MetadataPlacementAndAccounting) {
     EXPECT_EQ(allocator.stats().allocated, 1U);
     EXPECT_EQ(allocator.stats().free, 9U);
 }
+
 TEST_F(Pages, ExhaustionReuseAndInvalidRelease) {
     initialize();
     uint64_t addresses[16];
     size_t count = 0;
+
     while (count < 16 && allocator.allocate(addresses[count]))
         ++count;
     EXPECT_EQ(count, 12U);
@@ -68,10 +76,12 @@ TEST_F(Pages, ExhaustionReuseAndInvalidRelease) {
     EXPECT_EQ(allocator.release(addresses[2]), kernel::PageAllocator::Release::already_free);
     ASSERT_TRUE(allocator.allocate(untouched));
     EXPECT_EQ(untouched, addresses[2]);
+
     for (size_t i = 0; i < count; ++i)
         EXPECT_EQ(allocator.release(addresses[i]), kernel::PageAllocator::Release::success);
     EXPECT_EQ(allocator.stats().free, 12U);
 }
+
 TEST_F(Pages, PartialRamAndReservedPages) {
     ram = {0x1001, 0xfffe, false};
     boot = {{0x2000, 0x1000, false}, {0x3000, 0x1000, false}};
@@ -83,6 +93,7 @@ TEST_F(Pages, PartialRamAndReservedPages) {
     EXPECT_EQ(allocator.release(0x7000), kernel::PageAllocator::Release::reserved);
     EXPECT_EQ(allocator.release(0x8000), kernel::PageAllocator::Release::reserved);
 }
+
 TEST_F(Pages, BootConflictsInvalidRamMetadataAndStorage) {
     EXPECT_NE(kernel::plan_memory({UINT64_MAX - 1, 4, false}, reserved, boot, plan), nullptr);
     EXPECT_NE(kernel::plan_memory({0x1001, 20, false}, reserved, boot, plan), nullptr);
@@ -104,17 +115,21 @@ TEST_F(Pages, BootConflictsInvalidRamMetadataAndStorage) {
     EXPECT_TRUE(allocator.initialize(plan, reserved, {bits.data(), 32}));
     EXPECT_FALSE(allocator.initialize(plan, reserved, {bits.data(), 32}));
 }
+
 TEST(MemoryPlan, HandlesBothRamSizesAndLargeAddressBoundaries) {
     kernel::ReservationSet r;
     kernel::MemoryPlan plan{};
     const kernel::BootMemory boot{{0x40000000, 0x200000, false}, {0x40200000, 0x20000, false}};
+
     for (uint64_t size : {0x8000000ULL, 0x10000000ULL}) {
         ASSERT_EQ(kernel::plan_memory({0x40000000, size, false}, r, boot, plan), nullptr);
         EXPECT_EQ(plan.metadata.size, size / 16384);
         EXPECT_EQ(plan.metadata.base, 0x40220000U);
     }
+
     EXPECT_NE(kernel::plan_memory({UINT64_MAX - 4094, 4094, false}, r, boot, plan), nullptr);
 }
+
 class ReservedDiscovery : public testing::Test {
   protected:
     fixture::Node root{
@@ -128,14 +143,18 @@ class ReservedDiscovery : public testing::Test {
             {{"reg", fixture::cells({0, 0x41000000, 0, 0x2000})}, {"no-map", {}}},
             {}}}}}};
     kernel::ReservationSet ranges;
+
     const char *discover() {
         const auto bytes = fixture::blob(root);
         fdt::View view;
         EXPECT_EQ(fdt::View::open({bytes.data(), bytes.size()}, view), fdt::Error::none);
+
         return platform::discover_reservations(view, ranges);
     }
+
     fixture::Node &region() { return root.children[0].children[0]; }
 };
+
 TEST_F(ReservedDiscovery, StaticNoMapReusableAndDisabledRegions) {
     ASSERT_EQ(discover(), nullptr);
     EXPECT_EQ(ranges.count, 1U);
@@ -148,6 +167,7 @@ TEST_F(ReservedDiscovery, StaticNoMapReusableAndDisabledRegions) {
     ASSERT_EQ(discover(), nullptr);
     EXPECT_EQ(ranges.count, 0U);
 }
+
 TEST_F(ReservedDiscovery, RejectsDynamicTranslationFlagsDuplicateAndMalformedRegs) {
     region().properties.push_back({"reusable", {}});
     EXPECT_NE(discover(), nullptr);
@@ -159,15 +179,18 @@ TEST_F(ReservedDiscovery, RejectsDynamicTranslationFlagsDuplicateAndMalformedReg
     EXPECT_NE(discover(), nullptr);
     fixture::property(root.children[0], "ranges").clear();
     const auto valid = region().properties[0].value;
+
     for (const auto &bytes : {fixture::cells({0, 0x41000000, 0, 0}), fixture::cells({0, 1}),
                               fixture::cells({UINT32_MAX, UINT32_MAX, 0, 2})}) {
         region().properties[0].value = bytes;
         EXPECT_NE(discover(), nullptr);
     }
+
     region().properties[0].value = valid;
     region().properties.push_back(region().properties[0]);
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST(FdtReservations, IterationSupportsUnalignedBuffersAndPreservesEnd) {
     auto bytes = fixture::blob({"", {}, {}});
     bytes.insert(bytes.begin() + 40, 16, 0);
@@ -193,6 +216,7 @@ TEST(FdtReservations, IterationSupportsUnalignedBuffersAndPreservesEnd) {
     EXPECT_EQ(view.next_reservation(cursor, entry), fdt::Error::not_found);
     EXPECT_EQ(view.next_reservation(cursor, entry), fdt::Error::not_found);
 }
+
 TEST(MemoryMonitor, ParsingAndExactAccounting) {
     EXPECT_EQ(kernel::parse_command({"mem test ", 9}).kind, kernel::CommandKind::mem_test);
     EXPECT_EQ(kernel::parse_command({"mem ", 4}).kind, kernel::CommandKind::mem);
@@ -213,6 +237,7 @@ TEST_F(ReservedDiscovery, RejectsCapacityNestedLayoutsAndMalformedFlags) {
     region().children.push_back({"nested", {}, {}});
     EXPECT_NE(discover(), nullptr);
     root.children[0].children.clear();
+
     for (uint32_t i = 0; i < 33; ++i)
         root.children[0].children.push_back(
             {"region", {{"reg", fixture::cells({0, 0x41000000 + i * 0x2000, 0, 0x1000})}}, {}});
@@ -221,6 +246,7 @@ TEST_F(ReservedDiscovery, RejectsCapacityNestedLayoutsAndMalformedFlags) {
     EXPECT_EQ(discover(), nullptr);
     EXPECT_EQ(ranges.count, 32U);
 }
+
 TEST(MemoryPlan, InvalidCountAndUninitializedAllocatorAreSafe) {
     kernel::PageAllocator allocator;
     uint64_t unchanged = 77;

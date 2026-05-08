@@ -6,16 +6,20 @@ namespace {
 void append(void *context, char character) {
     static_cast<std::string *>(context)->push_back(character);
 }
+
 kernel::Command parse(const std::string &line) {
     return kernel::parse_command({line.data(), line.size()});
 }
+
 std::string response(const std::string &line) {
     std::string output;
     kernel::TextWriter writer(append, &output);
     kernel::render_text_command(writer, parse(line));
+
     return output;
 }
 } // namespace
+
 TEST(Monitor, ParserBorrowsArgumentsAndHonorsSpacing) {
     const std::string line = "  echo   hello  world  ";
     const auto command = parse(line);
@@ -29,6 +33,7 @@ TEST(Monitor, ParserBorrowsArgumentsAndHonorsSpacing) {
     EXPECT_EQ(response(""), "");
     EXPECT_EQ(parse(" cpu  ").kind, kernel::CommandKind::cpu);
 }
+
 TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
     EXPECT_EQ(
         response("help  "),
@@ -51,17 +56,21 @@ TEST(Monitor, ExactHelpUsageAndUnknownResponses) {
     EXPECT_EQ(response("cpux"), "mini-os: unknown command: cpux\n");
     EXPECT_EQ(response("echo \"help\";cpu"), "echo: \"help\";cpu\n");
 }
+
 TEST(Monitor, BoundedInputRejectsControlsAndNonAscii) {
     const auto line = "echo " + std::string(122, 'x');
     EXPECT_EQ(parse(line).kind, kernel::CommandKind::echo);
     EXPECT_EQ(parse(line + "x").kind, kernel::CommandKind::invalid);
+
     for (const auto &invalid :
          {std::string("cpu\0", 4), std::string("cpu\t"), std::string("\xff")}) {
         EXPECT_EQ(parse(invalid).kind, kernel::CommandKind::invalid);
     }
+
     EXPECT_EQ(kernel::parse_command({nullptr, 1}).kind, kernel::CommandKind::invalid);
     EXPECT_EQ(kernel::parse_command({nullptr, 0}).kind, kernel::CommandKind::empty);
 }
+
 TEST(TextWriter, NumericWidthsAndBoundaries) {
     std::string output;
     kernel::TextWriter writer(append, &output);
@@ -82,6 +91,7 @@ TEST(TextWriter, NumericWidthsAndBoundaries) {
     writer.hex(1, {17});
     EXPECT_EQ(output, "0x0000000000000000 0xffffffffffffffff 0xffffffff 0x41 0xd03 0 4294967295");
 }
+
 TEST(Monitor, CpuReportIsExactAndDistinguishesDtAvailability) {
     platform::CpuInventory inventory;
     inventory.count = 2;
@@ -103,6 +113,7 @@ TEST(Monitor, CpuReportIsExactAndDistinguishesDtAvailability) {
         "cpu: DAIF=0x00000000000003c0 D=1 A=1 I=1 F=1\n"
         "cpu: SCTLR_EL1=0x0000000000001005 MMU=on D-cache=on I-cache=on\n");
 }
+
 TEST(Monitor, UnknownCpuStillReportsRawState) {
     platform::CpuInventory inventory;
     inventory.count = inventory.enabled_count = 1;
@@ -121,10 +132,12 @@ TEST(Monitor, FaultCommandsRequireExactlyOneKnownArgument) {
     EXPECT_EQ(parse("fault brk").kind, kernel::CommandKind::fault_brk);
     EXPECT_EQ(parse("  fault   undef  ").kind, kernel::CommandKind::fault_undef);
     EXPECT_EQ(response("fault brk"), ""); // Hardware execution belongs to the console adapter.
+
     for (const auto *line : {"fault", "fault  ", "fault BRK", "fault unknown", "fault brk x",
                              "fault undef brk", "fault brk;echo"}) {
         EXPECT_EQ(response(line), "usage: fault brk|undef|unmapped|readonly|stack\n") << line;
     }
+
     EXPECT_EQ(response("Fault brk"), "mini-os: unknown command: Fault\n");
 }
 

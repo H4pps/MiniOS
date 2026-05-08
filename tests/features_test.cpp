@@ -1,7 +1,9 @@
 #include "mini_os/features.h"
 #include <gtest/gtest.h>
 #include <string>
+
 using arch::FeatureField;
+
 TEST(Features, CortexA53FieldsAndRegisterBoundaries) {
     const arch::FeatureSnapshot snapshot{0x1000022, 0x11120, 0, 0x1122, 0, 0x10305106};
     EXPECT_STREQ(arch::decode_feature(snapshot, FeatureField::el0).label, "a64+a32");
@@ -16,6 +18,7 @@ TEST(Features, CortexA53FieldsAndRegisterBoundaries) {
     EXPECT_EQ(arch::decode_feature(snapshot, FeatureField::breakpoints).number, 6U);
     EXPECT_EQ(arch::decode_feature(snapshot, FeatureField::watchpoints).number, 4U);
 }
+
 TEST(Features, ModernEncodingsUnknownValuesAndAbsentFp) {
     const arch::FeatureSnapshot s{
         0xff0000 | (1ULL << 24),         (3ULL << 20) | (2ULL << 12),    1ULL << 36,
@@ -33,6 +36,7 @@ TEST(Features, ModernEncodingsUnknownValuesAndAbsentFp) {
     EXPECT_STREQ(arch::decode_feature(s, FeatureField::sb).label, "present");
     const arch::FeatureSnapshot unknown{UINT64_MAX, UINT64_MAX, UINT64_MAX,
                                         UINT64_MAX, UINT64_MAX, UINT64_MAX};
+
     for (auto field : {FeatureField::el0, FeatureField::gic, FeatureField::aes,
                        FeatureField::atomics, FeatureField::pa_bits, FeatureField::asid_bits,
                        FeatureField::vmid_bits, FeatureField::pan, FeatureField::hafdbs,
@@ -42,18 +46,23 @@ TEST(Features, ModernEncodingsUnknownValuesAndAbsentFp) {
         EXPECT_FALSE(result.numeric);
         EXPECT_STREQ(result.label, "unknown");
     }
+
     EXPECT_STREQ(arch::decode_feature({}, FeatureField::el0).label, "unknown");
     EXPECT_STREQ(arch::decode_feature({}, FeatureField::debug).label, "unknown");
 }
+
 TEST(Features, EveryFieldIsBoundedAndUnknownEnumDoesNotShift) {
     const arch::FeatureSnapshot ones{UINT64_MAX, UINT64_MAX, UINT64_MAX,
                                      UINT64_MAX, UINT64_MAX, UINT64_MAX};
+
     for (unsigned value = 0; value < static_cast<unsigned>(FeatureField::count); ++value) {
         const auto result = arch::decode_feature(ones, static_cast<FeatureField>(value));
         EXPECT_LE(result.raw, 15U);
         EXPECT_TRUE(result.numeric || result.label != nullptr);
     }
+
     EXPECT_STREQ(arch::decode_feature(ones, static_cast<FeatureField>(255)).label, "unknown");
+
     for (uint64_t bits = 0; bits < 16; ++bits) {
         arch::FeatureSnapshot snapshot{};
         snapshot.mmfr0 = bits;
@@ -62,6 +71,7 @@ TEST(Features, EveryFieldIsBoundedAndUnknownEnumDoesNotShift) {
         EXPECT_EQ(result.numeric, bits < 8);
     }
 }
+
 TEST(Features, ExactRawAndDecodedReportPreservesNumericEncodings) {
     std::string output;
     kernel::TextWriter writer([](void *p, char c) { static_cast<std::string *>(p)->push_back(c); },

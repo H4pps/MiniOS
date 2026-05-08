@@ -1,10 +1,12 @@
 """CPU hierarchy/ID protocol, malformed reports, deadlines and child cleanup."""
+
 import os
 import subprocess
 import unittest
 from unittest.mock import patch
 import test_boot_runner
 import test_irq_runner
+
 qemu = test_boot_runner.qemu
 FEATURES = b'''features: ID_AA64PFR0_EL1=0x0000000001000022 ID_AA64ISAR0_EL1=0x0000000000011120
 features: ID_AA64ISAR1_EL1=0x0000000000000000 ID_AA64MMFR0_EL1=0x0000000000001122
@@ -41,12 +43,16 @@ class CpuDiscoveryRunnerTests(unittest.TestCase):
 
     def test_fragmented_reports_across_models_and_capacity_reap_children(self):
         processes = []; popen = subprocess.Popen
+
         def launch(*args, **kwargs):
             process = popen(*args, **kwargs); processes.append(process); return process
+
         with patch.object(qemu.subprocess, 'Popen', side_effect=launch):
             result = self.run_fake(CONSOLE)
+
         self.assertTrue(result.success, result.reason)
         self.assertEqual(len(processes), 5)
+
         for process in processes:
             with self.assertRaises(ChildProcessError): os.waitpid(process.pid, os.WNOHANG)
 
@@ -57,20 +63,27 @@ class CpuDiscoveryRunnerTests(unittest.TestCase):
                          ('0000000000011120', '0000000000011130'), ('sha256', 'unknown'),
                          ('breakpoints=6', 'breakpoints=8'), ('pa-bits=44(0x4)', 'pa-bits=40(0x2)')):
             result = self.run_fake(CONSOLE.replace(old, new))
+
             self.assertFalse(result.success, old)
 
     def test_partial_exit_closed_input_and_timeout(self):
         result = self.run_fake(CONSOLE.replace('report = features', "os.write(2,b'feature failed');sys.exit(7);report = features"))
+
         self.assertFalse(result.success); self.assertIn(b'feature failed', result.stderr)
         result = self.run_fake('os.close(0)\nos.write(1,' + repr(qemu.READY) + ')\ntime.sleep(30)')
+
         self.assertFalse(result.success); self.assertIn('closed serial stdin', result.reason)
         result = self.run_fake(CONSOLE.replace("response += b'mini-os> '", 'time.sleep(30)'), timeout=.3)
+
         self.assertFalse(result.success); self.assertIn('Timed out', result.reason)
 
     def test_stderr_draining_forced_shutdown_and_unexpected_exception(self):
         result = self.run_fake(CONSOLE.replace('report = features', "os.write(2,b'diagnostic'*10000);report = features"))
+
         self.assertTrue(result.success, result.reason); self.assertGreater(len(result.stderr), 100000)
         result = self.run_fake('signal.signal(signal.SIGTERM,signal.SIG_IGN)\ntime.sleep(30)', timeout=.3)
+
         self.assertFalse(result.success)
         result = self.run_fake(CONSOLE.replace('report = features', "os.write(1,b'mini-os: exception');report = features"))
+
         self.assertFalse(result.success)

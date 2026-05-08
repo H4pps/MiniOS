@@ -10,25 +10,30 @@
 
 namespace fixture {
 using Bytes = std::vector<uint8_t>;
+
 struct Property {
     std::string name;
     Bytes value;
 };
+
 struct Node {
     std::string name;
     std::vector<Property> properties;
     std::vector<Node> children;
 };
+
 inline void append32(Bytes &bytes, uint32_t value) {
     for (unsigned shift : {24U, 16U, 8U, 0U}) {
         bytes.push_back(static_cast<uint8_t>(value >> shift));
     }
 }
+
 inline void set32(Bytes &bytes, size_t offset, uint32_t value) {
     for (unsigned i = 0; i < 4; ++i) {
         bytes.at(offset + i) = static_cast<uint8_t>(value >> (24U - i * 8U));
     }
 }
+
 inline uint32_t get32(const Bytes &bytes, size_t offset) {
     uint32_t value = 0;
     for (size_t i = 0; i < 4; ++i) {
@@ -36,6 +41,7 @@ inline uint32_t get32(const Bytes &bytes, size_t offset) {
     }
     return value;
 }
+
 inline Bytes cells(std::initializer_list<uint32_t> values) {
     Bytes bytes;
     for (auto value : values) {
@@ -43,6 +49,7 @@ inline Bytes cells(std::initializer_list<uint32_t> values) {
     }
     return bytes;
 }
+
 inline Bytes strings(std::initializer_list<const char *> values) {
     Bytes bytes;
     for (const char *value : values) {
@@ -53,11 +60,13 @@ inline Bytes strings(std::initializer_list<const char *> values) {
     }
     return bytes;
 }
+
 inline void pad(Bytes &bytes) {
     while (bytes.size() % 4 != 0) {
         bytes.push_back(0);
     }
 }
+
 inline void encode_node(const Node &node, Bytes &structure, Bytes &names) {
     append32(structure, 1);
     structure.insert(structure.end(), node.name.begin(), node.name.end());
@@ -77,6 +86,7 @@ inline void encode_node(const Node &node, Bytes &structure, Bytes &names) {
     }
     append32(structure, 2);
 }
+
 inline Bytes blob(const Node &root) {
     Bytes structure, names;
     encode_node(root, structure, names);
@@ -96,6 +106,7 @@ inline Bytes blob(const Node &root) {
     set32(bytes, 36, static_cast<uint32_t>(structure.size()));
     return bytes;
 }
+
 inline Node &child(Node &node, const std::string &name) {
     for (auto &item : node.children) {
         if (item.name == name) {
@@ -104,6 +115,7 @@ inline Node &child(Node &node, const std::string &name) {
     }
     std::abort();
 }
+
 inline Bytes &property(Node &node, const std::string &name) {
     for (auto &item : node.properties) {
         if (item.name == name) {
@@ -112,6 +124,7 @@ inline Bytes &property(Node &node, const std::string &name) {
     }
     std::abort();
 }
+
 inline Node tree() {
     return {
         "",

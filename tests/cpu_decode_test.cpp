@@ -13,6 +13,7 @@ TEST(CpuDecode, IdentityAndUnknownModels) {
     EXPECT_STREQ(arch::decode_cpu_snapshot({0x421fd030, 0, 4, 0, 0}).model, "unknown");
     EXPECT_STREQ(arch::decode_cpu_snapshot({0x411f1230, 0, 4, 0, 0}).model, "unknown");
 }
+
 TEST(CpuDecode, AffinityIgnoresNonAffinityBits) {
     const uint64_t raw = UINT64_C(0xabcdef12ff345678);
     EXPECT_EQ(arch::cpu_affinity(raw), UINT64_C(0x1200345678));
@@ -23,6 +24,7 @@ TEST(CpuDecode, AffinityIgnoresNonAffinityBits) {
     EXPECT_EQ(info.affinity[3], 0x12);
     EXPECT_EQ(info.el, 3);
 }
+
 TEST(CpuDecode, MasksAndCacheControlsAreIndependent) {
     for (uint64_t mask = 0; mask < 16; ++mask) {
         const auto info = arch::decode_cpu_snapshot({0, 0, 4, mask << 6, 0});
@@ -31,6 +33,7 @@ TEST(CpuDecode, MasksAndCacheControlsAreIndependent) {
         EXPECT_EQ(info.irq_masked, (mask & 2) != 0);
         EXPECT_EQ(info.fiq_masked, (mask & 1) != 0);
     }
+
     for (uint64_t flags = 0; flags < 8; ++flags) {
         const auto sctlr = (flags & 1) | ((flags & 2) << 1) | ((flags & 4) << 10);
         const auto info = arch::decode_cpu_snapshot({0, 0, 4, 0, sctlr});

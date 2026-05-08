@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <gtest/gtest.h>
 #include <string>
+
 namespace {
 fixture::Node cpu(uint32_t affinity, uint32_t handle) {
     return {"cpu@" + std::to_string(affinity),
@@ -13,10 +14,12 @@ fixture::Node cpu(uint32_t affinity, uint32_t handle) {
              {"phandle", fixture::cells({handle})}},
             {}};
 }
+
 fixture::Node core(uint32_t index, uint32_t handle) {
     return {"core" + std::to_string(index), {{"cpu", fixture::cells({handle})}}, {}};
 }
 } // namespace
+
 class Topology : public testing::Test {
   protected:
     fixture::Node root{
@@ -30,18 +33,25 @@ class Topology : public testing::Test {
     platform::CpuInventory inventory;
     platform::CpuTopology topology{};
     fixture::Bytes bytes;
+
     fixture::Node &cpus() { return root.children[0]; }
+
     fixture::Node &map() { return fixture::child(cpus(), "cpu-map"); }
+
     fixture::Node &cluster() { return map().children[0].children[0]; }
+
     const char *discover(uint64_t boot = 0) {
         bytes = fixture::blob(root);
         fdt::View view;
         EXPECT_EQ(fdt::View::open({bytes.data(), bytes.size()}, view), fdt::Error::none);
+
         if (platform::discover_cpus(view, boot, inventory) != platform::CpuDiscoveryError::none)
             return "CPU inventory failed";
+
         return platform::discover_topology(view, inventory, topology);
     }
 };
+
 TEST_F(Topology, SocketsSortedAffinitiesPropertyOrderAndBorrowedNodeReferences) {
     ASSERT_EQ(discover(1), nullptr);
     EXPECT_TRUE(topology.described);
@@ -51,6 +61,7 @@ TEST_F(Topology, SocketsSortedAffinitiesPropertyOrderAndBorrowedNodeReferences) 
     EXPECT_EQ(topology.cores, 2U);
     EXPECT_EQ(topology.threads, 0U);
     EXPECT_EQ(inventory.boot_index, 1U);
+
     for (size_t i = 0; i < 2; ++i) {
         EXPECT_EQ(inventory.records[i].affinity, i);
         EXPECT_NE(inventory.records[i].node, fdt::invalid_node);
@@ -59,10 +70,12 @@ TEST_F(Topology, SocketsSortedAffinitiesPropertyOrderAndBorrowedNodeReferences) 
         EXPECT_EQ(topology.records[i].core, i);
         EXPECT_EQ(topology.records[i].thread, platform::absent_topology_id);
     }
+
     for (auto &node : cpus().children)
         std::reverse(node.properties.begin(), node.properties.end());
     EXPECT_EQ(discover(), nullptr);
 }
+
 TEST_F(Topology, MissingMapIsExplicitlyNotDescribedAndClearsPreviousResult) {
     ASSERT_EQ(discover(), nullptr);
     cpus().children.pop_back();
@@ -72,6 +85,7 @@ TEST_F(Topology, MissingMapIsExplicitlyNotDescribedAndClearsPreviousResult) {
     EXPECT_EQ(topology.records[0].core, platform::absent_topology_id);
     EXPECT_FALSE(topology.records[0].mapped);
 }
+
 TEST_F(Topology, NestedClustersThreadsAndDisabledInventoryCoverage) {
     cpus().children[0].properties.push_back({"status", fixture::strings({"disabled"})});
     map().children = {{"cluster0",
@@ -93,6 +107,7 @@ TEST_F(Topology, NestedClustersThreadsAndDisabledInventoryCoverage) {
     map().children[0].children[0].children[0].children.pop_back();
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST_F(Topology, DuplicateReferencesPropertiesAndPhandlesAreRejected) {
     auto &first = cluster().children[0];
     const auto saved = first.properties;
@@ -108,14 +123,17 @@ TEST_F(Topology, DuplicateReferencesPropertiesAndPhandlesAreRejected) {
     cpus().children.push_back(map());
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST_F(Topology, MissingUnknownAndMalformedReferencesAreRejected) {
     const auto valid = cluster().children[0].properties;
+
     for (const auto &value :
          {fixture::cells({99}), fixture::cells({0}), fixture::cells({UINT32_MAX}),
           fixture::cells({10, 11}), fixture::Bytes{}}) {
         cluster().children[0].properties[0].value = value;
         EXPECT_NE(discover(), nullptr);
     }
+
     cluster().children[0].properties.clear();
     EXPECT_NE(discover(), nullptr);
     cluster().children[0].properties = valid;
@@ -123,14 +141,17 @@ TEST_F(Topology, MissingUnknownAndMalformedReferencesAreRejected) {
     cluster().children[0].properties[0].value = fixture::cells({99});
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST_F(Topology, RejectsMixedRolesNonsequentialNamesAndAmbiguousTopologyPaths) {
     const auto original = map();
+
     for (const std::string &name :
          {"core2", "core00", "core4294967296", "corex", "cpu0", "core8"}) {
         map() = original;
         cluster().children[0].name = name;
         EXPECT_NE(discover(), nullptr);
     }
+
     map() = original;
     cluster().children.push_back({"cluster0", {}, {}});
     EXPECT_NE(discover(), nullptr);
@@ -146,12 +167,15 @@ TEST_F(Topology, RejectsMixedRolesNonsequentialNamesAndAmbiguousTopologyPaths) {
     EXPECT_EQ(topology.count, 0U);
     EXPECT_FALSE(topology.described);
 }
+
 TEST_F(Topology, EightCpuBoundaryWithTwoCellAffinitiesAndSeveralSockets) {
     cpus().children.clear();
     fixture::property(cpus(), "#address-cells") = fixture::cells({2});
     fixture::Node mapping{"cpu-map", {}, {}};
+
     for (uint32_t socket = 0; socket < 2; ++socket) {
         fixture::Node container{"socket" + std::to_string(socket), {}, {{"cluster0", {}, {}}}};
+
         for (uint32_t index = 0; index < 4; ++index) {
             const auto id = socket * 4 + index;
             auto node = cpu(id, 100 + id);
@@ -159,8 +183,10 @@ TEST_F(Topology, EightCpuBoundaryWithTwoCellAffinitiesAndSeveralSockets) {
             cpus().children.push_back(node);
             container.children[0].children.push_back(core(index, 100 + id));
         }
+
         mapping.children.push_back(container);
     }
+
     cpus().children.push_back(mapping);
     ASSERT_EQ(discover(), nullptr);
     EXPECT_EQ(topology.count, 8U);
@@ -169,8 +195,10 @@ TEST_F(Topology, EightCpuBoundaryWithTwoCellAffinitiesAndSeveralSockets) {
     cpus().children.push_back(cpu(9, 109));
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST_F(Topology, MaximumDepthEmptyContainersAndUnsupportedProperties) {
     fixture::Node branch = core(0, 10);
+
     for (unsigned i = 0; i < 24; ++i)
         branch = {"cluster0", {}, {branch}};
     map().children = {branch};
@@ -182,6 +210,7 @@ TEST_F(Topology, MaximumDepthEmptyContainersAndUnsupportedProperties) {
     map().children = {{"cluster0", {{"status", fixture::strings({"okay"})}}, {core(0, 10)}}};
     EXPECT_NE(discover(), nullptr);
 }
+
 TEST_F(Topology, RenderingStatesAndStrictMonitorArguments) {
     ASSERT_EQ(discover(), nullptr);
     std::string output;

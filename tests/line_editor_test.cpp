@@ -9,11 +9,13 @@ TEST(LineEditor, PrintableAsciiAndTerminator) {
     LineEditor editor;
     EXPECT_EQ(editor.length(), 0U);
     EXPECT_STREQ(editor.text(), "");
+
     for (uint8_t byte = 32; byte <= 126; ++byte) {
         EXPECT_EQ(editor.feed(byte), EditAction::appended);
         EXPECT_EQ(editor.text()[editor.length() - 1], static_cast<char>(byte));
         EXPECT_EQ(editor.text()[editor.length()], '\0');
     }
+
     EXPECT_EQ(editor.length(), 95U);
     EXPECT_EQ(editor.feed('\n'), EditAction::submitted);
     EXPECT_EQ(editor.length(), 95U); // Caller can render before clearing.
@@ -51,21 +53,26 @@ TEST(LineEditor, EnterVariantsEmptyLinesAndCrlfSuppressionSurviveClear) {
 
 TEST(LineEditor, UnsupportedBytesAreIgnored) {
     LineEditor editor;
+
     for (unsigned value = 0; value <= 255; ++value) {
         if ((value >= 32 && value <= 126) || value == 8 || value == 127 || value == 10 ||
             value == 13) {
             continue;
         }
+
         EXPECT_EQ(editor.feed(static_cast<uint8_t>(value)), EditAction::ignored);
     }
+
     EXPECT_STREQ(editor.text(), "");
 }
 
 TEST(LineEditor, ExactBoundaryCanSubmitOrEdit) {
     LineEditor editor;
+
     for (size_t i = 0; i < LineEditor::capacity; ++i) {
         ASSERT_EQ(editor.feed('x'), EditAction::appended);
     }
+
     EXPECT_EQ(editor.length(), 127U);
     EXPECT_EQ(editor.text()[127], '\0');
     EXPECT_EQ(editor.feed('\n'), EditAction::submitted);
@@ -76,9 +83,11 @@ TEST(LineEditor, ExactBoundaryCanSubmitOrEdit) {
 
 TEST(LineEditor, OverflowRingsOnceDiscardsWholeLineAndRecovers) {
     LineEditor editor;
+
     for (size_t i = 0; i < LineEditor::capacity; ++i) {
         editor.feed('x');
     }
+
     EXPECT_EQ(editor.feed('x'), EditAction::overflow);
     EXPECT_STREQ(editor.text(), "");
     EXPECT_EQ(editor.feed('y'), EditAction::ignored);
@@ -110,9 +119,11 @@ TEST(LineEditor, ReceiveErrorCancelsThroughEnterAndRecovers) {
 
 TEST(LineEditor, ReceiveErrorOverridesOverflowAndDoesNotSuppressRecoveryEnter) {
     LineEditor editor;
+
     for (size_t i = 0; i <= LineEditor::capacity; ++i) {
         editor.feed('x');
     }
+
     editor.cancel();
     EXPECT_EQ(editor.feed('\n'), EditAction::rejected_receive_error);
     editor.clear();
