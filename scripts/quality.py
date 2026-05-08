@@ -13,15 +13,19 @@ EXTENSIONS = {".c", ".h", ".cc", ".cpp", ".cxx", ".hpp"}
 
 def tool(name):
     executable = shutil.which(name)
+
     if executable is None:
         raise RuntimeError(f"Missing {name}; see README.md for LLVM prerequisites.")
+
     return executable
 
 
 def main():
     if len(sys.argv) < 2:
         raise RuntimeError("Expected format, format-check, or lint.")
+
     command = sys.argv[1]
+
     if command in {"format", "format-check"}:
         files = sorted(
             path
@@ -30,24 +34,33 @@ def main():
             if path.is_file() and path.suffix in EXTENSIONS
         )
         flags = ["-i"] if command == "format" else ["--dry-run", "--Werror"]
+
         for path in files:
             subprocess.run([tool("clang-format"), *flags, str(path)], check=True, cwd=ROOT)
     elif command == "lint" and len(sys.argv) == 3:
         build_dir = Path(sys.argv[2]).resolve()
+
         with (build_dir / "compile_commands.json").open() as stream:
             database = json.load(stream)
+
         sources = set()
+
         for entry in database:
             path = Path(entry["file"])
+
             if not path.is_absolute():
                 path = Path(entry["directory"]) / path
+
             path = path.resolve()
+
             if path.suffix in EXTENSIONS and any(
                 folder in path.parents for folder in (ROOT / "src", ROOT / "tests", ROOT / "tools")
             ):
                 sources.add(path)
+
         if not sources:
             raise RuntimeError("No project translation units found in compilation database.")
+
         for source in sorted(sources):
             subprocess.run(
                 [tool("clang-tidy"), "-p", str(build_dir), str(source)], check=True, cwd=ROOT
