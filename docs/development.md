@@ -49,24 +49,118 @@ Changing a configured compiler requires cleaning that preset.
 
 ## Setup and scripts
 
-The [project README](../README.md#prerequisites-and-setup) lists platform package
-prerequisites. System packages are installed by the user or CI, never by setup.
+Run the commands below from the repository directory. System packages are
+installed by the user or CI, never by setup.
+
+### Prerequisites and setup
+
+Use Bash, Git, Python 3.9+, and your platform's development tools. Setup installs
+pinned CMake and Ninja into the project's `.venv/`. It never installs system
+packages. LLVM provides formatting and static analysis tools.
+
+On macOS, install Xcode Command Line Tools and the kernel tools:
+
+```sh
+xcode-select --install
+brew install llvm@21 lld@21 qemu
+```
+
+On Ubuntu 24.04 (the CI configuration):
+
+```sh
+sudo apt-get update
+sudo apt-get install clang-18 lld-18 llvm-18 clang-format-18 clang-tidy-18 qemu-system-arm git python3-venv curl zip unzip tar pkg-config
+export PATH="/usr/lib/llvm-18/bin:$PATH"
+```
+
+For kernel development alone:
 
 ```sh
 ./scripts/setup.sh --kernel
-./scripts/dev.sh kernel-build
+./scripts/dev.sh kernel-test
 ./scripts/dev.sh kernel-run
-./scripts/dev.sh kernel-test kernel-release
 ```
 
-Kernel setup prepares pinned Python-venv CMake/Ninja tools, checks the AArch64
-compiler and versioned QEMU machine, and does not bootstrap hosted libraries.
+Kernel setup checks Clang's AArch64 target, LLD, LLVM archive tools, and QEMU's
+`virt-8.2` machine. It does not clone vcpkg or download hosted libraries. QEMU
+must be version 8.2 or newer with the `virt-8.2` model available.
+
+To also prepare the host test environment:
 
 ```sh
 ./scripts/setup.sh
-./scripts/dev.sh check-host
 ./scripts/dev.sh check
+./scripts/dev.sh run
 ```
+
+Host setup clones vcpkg into `.tools/vcpkg/`, checks out the manifest baseline,
+and bootstraps it. The first host configure installs GoogleTest and `magic_enum`
+for host tests.
+Network access is needed for local build-tool installation and initial hosted
+dependencies. Generated files and downloaded tools stay out of Git.
+
+Set `VCPKG_ROOT` before host setup to reuse an existing compatible vcpkg checkout.
+Setup preserves its revision; the manifest baseline still pins dependencies.
+
+### Commands and presets
+
+| Command | Action |
+| --- | --- |
+| `./scripts/setup.sh` | Prepare local build tools and host vcpkg |
+| `./scripts/setup.sh --kernel` | Prepare local build tools and validate kernel prerequisites |
+| `./scripts/dev.sh configure` | Configure host CMake and dependencies |
+| `./scripts/dev.sh build` | Configure and build host targets |
+| `./scripts/dev.sh test` | Build and run host GoogleTest tests |
+| `./scripts/dev.sh run` | Build and run the native host demo |
+| `./scripts/dev.sh kernel-build` | Produce `build/kernel-debug/kernel.elf` and `kernel.map` |
+| `./scripts/dev.sh kernel-run` | Build and launch the serial console; Ctrl-C stops QEMU |
+| `./scripts/dev.sh kernel-test` | Build and run all kernel CTests, including task workloads, ELF inspection and runner failure checks |
+| `./scripts/dev.sh kernel-lint` | Analyze kernel C/C++ with its compilation database |
+| `./scripts/dev.sh format` | Format project C/C++ sources and headers |
+| `./scripts/dev.sh format-check` | Check formatting without edits |
+| `./scripts/dev.sh lint` | Build and analyze host translation units |
+| `./scripts/dev.sh check-host` | Formatting, host analysis, debug/release/sanitizer tests |
+| `./scripts/dev.sh check` | Run full host checks and kernel analysis/tests in both kernel presets |
+| `./scripts/dev.sh clean PRESET` | Remove only that preset's build directory |
+
+Host commands default to `host-debug`; kernel commands default to
+`kernel-debug`. Build commands accept an appropriate preset as their second
+argument. All five presets have separate build directories:
+
+```sh
+./scripts/dev.sh test host-release
+./scripts/dev.sh test host-sanitize
+./scripts/dev.sh kernel-test kernel-release
+./scripts/dev.sh clean kernel-debug
+```
+
+Scripts work from any directory. Set `MINI_OS_BUILD_ROOT` to an absolute directory
+to keep scripted builds elsewhere, and `MINI_OS_VENV` to reuse a prepared tool
+venv. Direct CMake presets still default to `build/`. On macOS, host builds use Apple's SDK Clang so
+its sanitizer runtime matches the OS. Set `CC` / `CXX` before the first host
+configure to override this. Kernel commands resolve Homebrew `llvm@21` and
+`lld@21` separately, ignoring host compiler and SDK environment settings.
+On Linux, expose the desired LLVM toolchain on `PATH`. Clean a preset before
+changing its compiler. Each build exports `compile_commands.json` for editors
+and static analysis; assembly translation units are excluded from clang-tidy.
+
+For direct CMake / IDE use, expose the tools first:
+
+```sh
+export PATH="$PWD/.venv/bin:$PATH"
+export VCPKG_ROOT="$PWD/.tools/vcpkg"
+# On macOS, use these paths for kernel presets:
+export PATH="$(brew --prefix llvm@21)/bin:$(brew --prefix lld@21)/bin:$PATH"
+cmake --preset kernel-debug
+cmake --build --preset kernel-debug
+ctest --preset kernel-debug
+```
+
+For fresh direct host configuration on macOS, set `CC="$(xcrun --find clang)"`
+and `CXX="$(xcrun --find clang++)"`. Use an ignored `CMakeUserPresets.json` for
+machine-specific IDE settings.
+
+### Host test dependencies
 
 Host setup bootstraps vcpkg's exact [manifest baseline](../vcpkg.json).
 GoogleTest and `magic_enum` belong to the host-only `tests` feature. Enum reflection
@@ -79,32 +173,91 @@ over the full eight-bit range to verify coverage and original unknown-value
 fallbacks. A supplied external `VCPKG_ROOT` is preserved rather than reset.
 Kernel builds do not depend on vcpkg or hosted C++ headers.
 
-[common.sh](../scripts/common.sh) locates the project and tools.
-`MINI_OS_BUILD_ROOT` must be an absolute directory other than `/`.
-`MINI_OS_VENV` selects the tool environment; `CC/CXX` affect fresh host
-configuration. [dev.sh](../scripts/dev.sh) provides configure/build/test/run,
-kernel-build/run/test/lint, format/format-check, lint, check-host/check and
-preset-specific clean. Defaults are host-debug or kernel-debug as appropriate.
-
 ## Docker and CI
 
-[Dockerfile](../Dockerfile) packages Ubuntu 24.04, LLVM/LLD 18, QEMU, pinned
-build tools and vcpkg. [Compose](../compose.yaml) binds source read-only for
-development and uses a named `state` volume for downloads/caches/builds under
-`/var/mini-os`. Builds are separated by container `TARGETARCH`. The formatter
-service alone needs a writable source bind; Linux UID/GID can match the host.
+### Docker workflow
+
+Install [Docker Desktop](https://docs.docker.com/desktop/) on macOS or Windows
+(using Linux containers), or Docker Engine with Compose v2 on Linux. These
+commands work directly in PowerShell as well as a Unix shell; native LLVM,
+Python, CMake, vcpkg, and QEMU installations are unnecessary:
 
 ```sh
 docker compose build dev
-docker compose run --rm -T dev check
+docker compose run --rm dev check
 docker compose run --rm dev kernel-run
+```
+
+The image includes Ubuntu 24.04, LLVM / LLD 18, QEMU, the pinned CMake / Ninja
+versions, and vcpkg at the manifest baseline. It builds for the Docker engine's
+native `linux/amd64` or `linux/arm64` architecture. The kernel target remains
+AArch64 on QEMU `virt-8.2`; TCG emulation needs no KVM device or privileged mode.
+
+Pass any existing development command and preset to the `dev` service:
+
+```sh
+docker compose run --rm dev check-host
+docker compose run --rm dev test host-sanitize
+docker compose run --rm dev kernel-test kernel-release
+docker compose run --rm dev kernel-lint
+docker compose run --rm dev run
+docker compose run --rm dev clean kernel-debug
+```
+
+Source changes on the host are immediately visible in the container. The `dev`
+service mounts source read-only; project builds, downloads, and vcpkg binary caches
+persist in a Compose volume under `/var/mini-os`. Build directories are separated
+by container CPU architecture. Native `.venv/`, `.tools/`, and `build/` are never
+used as container tools or build outputs. Rebuild the image after changing
+`Dockerfile`, `scripts/requirements.txt`, or the vcpkg baseline.
+
+Formatting uses a separate service with a writable source mount:
+
+```sh
+docker compose run --rm format
+```
+
+On Linux, match your file ownership when formatting:
+
+```sh
+LOCAL_UID="$(id -u)" LOCAL_GID="$(id -g)" docker compose run --rm format
+```
+
+The Bash wrapper offers the same commands, rebuilds the image when necessary,
+and selects the correct Linux formatter UID / GID automatically:
+
+```sh
+./scripts/docker.sh check
+./scripts/docker.sh kernel-run
+./scripts/docker.sh kernel-test kernel-release
+./scripts/docker.sh format
 ./scripts/docker.sh shell
 ```
 
-The [Docker wrapper](../scripts/docker.sh) supports the development commands,
-rebuilds the image and selects formatting ownership. Rebuild after Dockerfile,
-pinned tool versions or vcpkg baseline changes. `clean PRESET` removes one build;
-`docker compose down --volumes` removes this project's container caches.
+For noninteractive automation, add `-T` to `docker compose run`. To open a shell
+directly, use `docker compose run --rm --entrypoint bash dev -i`. The shell's
+`MINI_OS_BUILD_ROOT` points to the container build directories. `clean PRESET`
+removes just that build; `docker compose down --volumes` deletes all Docker
+builds and dependency caches for this Compose project. Native builds are kept.
+
+The image also contains a source snapshot for use without Compose or a bind
+mount: `docker run --rm --init mini-os-dev:local check`. Compose is preferred for
+ongoing development because it uses current source and retains caches.
+The full workflow is verified locally in both ARM64 and AMD64 containers on
+macOS Docker Desktop; the AMD64 check uses local emulation. CI builds the image
+and runs the same workflow on native AMD64 and ARM64 Linux runners. An actual
+remote Actions run is still pending. To reproduce AMD64 verification on an ARM64
+Docker Desktop machine, use emulation explicitly:
+
+```sh
+docker buildx build --platform linux/amd64 --load -t mini-os-dev:amd64 .
+docker run --rm --init --platform linux/amd64 mini-os-dev:amd64 check
+```
+
+This uses the image's source snapshot and fresh build directories; emulated host
+builds and analysis are slower than native ARM64 checks.
+
+### GitHub Actions
 
 [GitHub Actions](../.github/workflows/ci.yml) has an Ubuntu host-quality job,
 a debug/release kernel job and native AMD64/ARM64 Docker jobs. The jobs invoke
