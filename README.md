@@ -35,8 +35,11 @@ tasks test
 elf
 ```
 
-`elf` runs the compiled C++ demo, prints its syscall results and `elf: user OK`,
-then returns to the monitor. Press **Ctrl-C** to stop QEMU.
+`elf` runs the compiled C++ demo in an isolated user address space. It checks
+memory initialization, stack access, system information, and page accounting,
+measures monotonic elapsed time, and exits with status **42** after printing its
+results. `elf test` runs it twice and verifies invalid-image rejection and cleanup.
+Press **Ctrl-C** to stop QEMU.
 
 For native development, follow the [setup guide](docs/development.md#setup-and-scripts),
 then run:
