@@ -84,3 +84,45 @@ TEST(PerformanceMonitor, ParsingStrictArgumentsAndUsage) {
         EXPECT_EQ(output, line[0] == 'd' ? "usage: diag\n" : "usage: perf [test]\n");
     }
 }
+
+TEST(PerformanceNanoseconds, FloorsFractionsAndAcceptsFrequencyBoundaries) {
+    uint64_t value = 99;
+    ASSERT_TRUE(kernel::counter_nanoseconds({1}, {0, 0}, value));
+    EXPECT_EQ(value, 0U);
+    ASSERT_TRUE(kernel::counter_nanoseconds({3}, {0, 4}, value));
+    EXPECT_EQ(value, 1333333333U);
+    ASSERT_TRUE(kernel::counter_nanoseconds({UINT32_MAX}, {0, 1}, value));
+    EXPECT_EQ(value, 0U);
+    ASSERT_TRUE(kernel::counter_nanoseconds({UINT32_MAX}, {0, UINT32_MAX}, value));
+    EXPECT_EQ(value, 1000000000U);
+    ASSERT_TRUE(kernel::counter_nanoseconds({1}, {0, 2}, value));
+    EXPECT_EQ(value, 2000000000U);
+    ASSERT_TRUE(kernel::counter_nanoseconds({62500000}, {0, 1}, value));
+    EXPECT_EQ(value, 16U);
+}
+
+TEST(PerformanceNanoseconds, RejectsInvalidWindowsWithoutChangingOutput) {
+    uint64_t value = 99;
+    for (const auto frequency : {uint64_t{0}, uint64_t(UINT32_MAX) + 1, UINT64_MAX}) {
+        EXPECT_FALSE(kernel::counter_nanoseconds({frequency}, {0, 1}, value));
+        EXPECT_EQ(value, 99U);
+    }
+    for (const kernel::CounterWindow window : {kernel::CounterWindow{0, 1ULL << 63}, {5, 4}}) {
+        EXPECT_FALSE(kernel::counter_nanoseconds({1}, window, value));
+        EXPECT_EQ(value, 99U);
+    }
+    ASSERT_TRUE(kernel::counter_nanoseconds({1000000000}, {UINT64_MAX - 5, 4}, value));
+    EXPECT_EQ(value, 10U);
+}
+
+TEST(PerformanceNanoseconds, SaturatesWholeSecondsAndFractionAtSignedLimit) {
+    uint64_t value = 0;
+    ASSERT_TRUE(kernel::counter_nanoseconds({1}, {0, (1ULL << 63) - 1}, value));
+    EXPECT_EQ(value, uint64_t(INT64_MAX));
+    ASSERT_TRUE(kernel::counter_nanoseconds({1000000000}, {0, INT64_MAX}, value));
+    EXPECT_EQ(value, uint64_t(INT64_MAX));
+    ASSERT_TRUE(kernel::counter_nanoseconds({100000000}, {0, uint64_t(INT64_MAX) / 10 + 1}, value));
+    EXPECT_EQ(value, uint64_t(INT64_MAX));
+    ASSERT_TRUE(kernel::counter_nanoseconds({1000000000}, {0, INT64_MAX - 1}, value));
+    EXPECT_EQ(value, uint64_t(INT64_MAX) - 1);
+}

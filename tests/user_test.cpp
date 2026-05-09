@@ -170,3 +170,60 @@ TEST(UserMonitor, StrictParsingAndExactFaultAndTimeoutReports) {
     EXPECT_NE(output.find("ec=0x00 iss=0x0000000"), std::string::npos);
     EXPECT_NE(output.find("ticks=18446744073709551615"), std::string::npos);
 }
+
+TEST(UserCalls, ScalarClassificationIgnoresUnusedArguments) {
+    kernel::UserMemory memory;
+    for (const auto argument : {uint64_t{0}, UINT64_MAX}) {
+        EXPECT_EQ(kernel::evaluate_user_call(memory,
+                                             {MINI_OS_SYSCALL_MONOTONIC_TIME, argument, UINT64_MAX})
+                      .kind,
+                  kernel::UserCallKind::monotonic_time);
+        EXPECT_EQ(
+            kernel::evaluate_user_call(memory, {MINI_OS_SYSCALL_SYS_INFO, argument, UINT64_MAX})
+                .kind,
+            kernel::UserCallKind::sys_info);
+    }
+}
+
+TEST(UserCalls, EveryInformationKeyUsesTheSuppliedSnapshot) {
+    for (const uint64_t size : {128ULL * 1024 * 1024, 256ULL * 1024 * 1024}) {
+        kernel::UserSystemInfo snapshot{
+            size, {0x40000000, size, size / 4096, 123, 57, size / 4096 - 180, 0}};
+        const uint64_t expected[] = {1,  4096, size, snapshot.pages.total, snapshot.pages.free,
+                                     57, 123};
+        for (uint64_t key = 1; key <= 7; ++key)
+            EXPECT_EQ(kernel::select_user_system_info(key, snapshot), expected[key - 1]);
+        for (const auto key : {uint64_t{0}, uint64_t{8}, UINT64_MAX})
+            EXPECT_EQ(kernel::select_user_system_info(key, snapshot), kernel::user_bad_size);
+        ++snapshot.pages.allocated;
+        EXPECT_EQ(kernel::select_user_system_info(MINI_OS_SYS_INFO_ALLOCATED_PAGES, snapshot), 58U);
+    }
+}
+
+TEST(UserCalls, ReturningScalarChangesOnlySavedX0) {
+    arch::ExceptionFrame frame{};
+    for (size_t i = 0; i < 31; ++i)
+        frame.registers[i] = 0x100 + i;
+    frame.entry_sp = 16;
+    frame.sp_el0 = 32;
+    frame.esr = 48;
+    frame.elr = 64;
+    frame.spsr = 80;
+    frame.far = 96;
+    frame.vector = 8;
+    const auto before = frame;
+    for (const auto result :
+         {uint64_t{0}, uint64_t(INT64_MAX), kernel::user_bad_size, kernel::user_clock_error}) {
+        kernel::set_user_call_result(frame, result);
+        EXPECT_EQ(frame.registers[0], result);
+        for (size_t i = 1; i < 31; ++i)
+            EXPECT_EQ(frame.registers[i], before.registers[i]);
+        EXPECT_EQ(frame.entry_sp, before.entry_sp);
+        EXPECT_EQ(frame.sp_el0, before.sp_el0);
+        EXPECT_EQ(frame.esr, before.esr);
+        EXPECT_EQ(frame.elr, before.elr);
+        EXPECT_EQ(frame.spsr, before.spsr);
+        EXPECT_EQ(frame.far, before.far);
+        EXPECT_EQ(frame.vector, before.vector);
+    }
+}

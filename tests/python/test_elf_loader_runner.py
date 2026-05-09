@@ -15,17 +15,30 @@ LAYOUT=(b'elf: entry=0x0000000001000000 segments=3 pages=3\r\n'
         b'elf[0]: va=0x0000000001000000 file=544 memory=544 permissions=r-x\r\n'
         b'elf[1]: va=0x0000000001001000 file=14 memory=14 permissions=r--\r\n'
         b'elf[2]: va=0x0000000001002000 file=8 memory=264 permissions=rw-\r\n')
-RUN=(b'elf: user OK\r\nuser: case=elf result=exit status=42 el=0 vector=8 ec=0x15 iss=0x0000000 '
+RUN=(b'elf: syscalls OK abi=1 page-size=4096 ram-bytes=134217728 monotonic-ns=1000000 elapsed-ns=1000\r\nelf: user OK\r\nuser: case=elf result=exit status=42 el=0 vector=8 ec=0x15 iss=0x0000000 '
      b'ELR=0x000000000100000c FAR(raw)=0x0000000000000000 SPSR=0x0000000060000340 '
-     b'SP_EL0=0x0000000001005000 ticks=0 syscalls=2 writes=1\r\n')
+     b'SP_EL0=0x0000000001005000 ticks=0 syscalls=14 writes=2\r\n')
 RETURN=b'elf: returned el=1 daif=0x0000000000000340 root-restored=yes pages-restored=yes\r\n'
 DEMO=LAYOUT+RUN+RETURN+b'elf: test OK runs=1\r\n'
 SUITE=LAYOUT+RUN+RUN+b'elf: rejected bad-magic\r\n'+RETURN+b'elf: test OK runs=2\r\n'
-CONSOLE='elf_demo='+repr(DEMO)+'\nelf_suite='+repr(SUITE)+'\n'+test_user_runner.CONSOLE.replace("    if command == b'user':",r'''
-    if command == b'elf':response+=elf_demo
+CONSOLE='clock=1000000\nelf_demo='+repr(DEMO)+'\nelf_suite='+repr(SUITE)+'\n'+test_user_runner.CONSOLE.replace("    if command == b'user':",r'''
+    if command == b'diag':
+        response+=f'diag: el=1 mmu=on caches=off irq=on uptime-us={clock//1000} timer-ticks=1 missed=0 recoveries=0 uart-dropped=0 pages-free=30000 heap-free=262112 exception-stack=0x0000000040258000\r\n'.encode()
+    elif command == b'elf':response+=elf_demo
     elif command == b'elf test':response+=elf_suite
     elif command.startswith(b'elf'):response+=b'usage: elf [test]\r\n'
     elif command == b'user':''')
+
+CONSOLE=CONSOLE.replace("    for value in response:", r"""    import re
+    def summary(match):
+        global clock
+        clock+=10000
+        value=match[0].replace(b'ram-bytes=134217728',f'ram-bytes={memory*1024*1024}'.encode())
+        value=value.replace(b'monotonic-ns=1000000',f'monotonic-ns={clock}'.encode())
+        clock+=1000
+        return value
+    response=re.sub(rb'elf: syscalls OK[^\r]+',summary,response)
+    for value in response:""")
 
 
 class ElfLoaderRunnerTests(unittest.TestCase):
@@ -43,6 +56,8 @@ class ElfLoaderRunnerTests(unittest.TestCase):
         with patch.object(qemu.subprocess,'Popen',side_effect=launch):result=self.run_fake(CONSOLE)
 
         self.assertTrue(result.success,result.reason);self.assertEqual(len(processes),4)
+        equal=self.run_fake(CONSOLE.replace('clock+=10000','clock+=0'))
+        self.assertTrue(equal.success,equal.reason)
 
         for process in processes:
             with self.assertRaises(ChildProcessError):os.waitpid(process.pid,os.WNOHANG)
@@ -55,7 +70,7 @@ class ElfLoaderRunnerTests(unittest.TestCase):
                         ('ELR=0x000000000100000c','ELR=0x0000000001000008'),
                         ('SPSR=0x0000000060000340','SPSR=0x00000000600003c0'),
                         ('SP_EL0=0x0000000001005000','SP_EL0=0x0000000001004ff0'),
-                        ('syscalls=2','syscalls=1'),('writes=1','writes=0'),
+                        ('syscalls=14','syscalls=13'),('writes=2','writes=1'),
                         ('rejected bad-magic','rejected none'),('root-restored=yes','root-restored=no'),
                         ('pages-restored=yes','pages-restored=no'),('test OK runs=2','test OK runs=1')):
             result=self.run_fake(CONSOLE.replace(old,new));self.assertFalse(result.success,old)
@@ -64,6 +79,17 @@ class ElfLoaderRunnerTests(unittest.TestCase):
         result=self.run_fake(leaked.replace('allocated=131','allocated=131+batch'))
 
         self.assertFalse(result.success);self.assertIn('leaked',result.reason)
+
+    def test_incorrect_scalar_values_units_and_decreasing_samples(self):
+        for old,new in (('abi=1','abi=2'),('page-size=4096','page-size=8192'),
+                        ('ram-bytes=134217728','ram-bytes=67108864'),
+                        ('elapsed-ns=1000','elapsed-ns=0'),('elapsed-ns=1000','elapsed-ns=999999999'),
+                        ('monotonic-ns=1000000','monotonic-ns=1'),
+                        ('monotonic-ns=1000000','monotonic-ns=9223372036854775808'),
+                        ('clock+=10000','clock-=10000'),
+                        ('clock+=10000','clock+=10000 if clock==1000000 else -10000')):
+            result=self.run_fake(CONSOLE.replace(old,new,1))
+            self.assertFalse(result.success,old)
 
     def test_partial_early_exit_closed_input_timeout_and_reaping(self):
         result=self.run_fake(CONSOLE.replace('response+=elf_suite',"os.write(2,b'ELF failed');sys.exit(7);response+=elf_suite"))

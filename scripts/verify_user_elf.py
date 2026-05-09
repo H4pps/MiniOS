@@ -54,10 +54,17 @@ def inspect(data):
             if name:symbols[name]=value
 
     require(symbols.get('_user_start')==entry and 'user_main' in symbols and 'user_write' in symbols,'Missing compiled user entry or ABI')
-    site=symbols.get('user_elf_exit_site',0)
     text=loads[0]
 
-    require(text[0]<=site<text[0]+text[2] and site%4==0,'Invalid user exit site')
+    for name,number in (('user_write',1),('user_monotonic_time',3),('user_sys_info',4)):
+        address=symbols.get(name,0)
+        require(address%4==0 and text[0]<=address and address+12<=text[0]+text[2], 'Missing or invalid user wrapper: '+name)
+        instructions=struct.unpack_from('<III',data,text[1]+address-text[0])
+        require(instructions==(0xd2800008|(number<<5),0xd4000001,0xd65f03c0), 'Incorrect syscall wrapper: '+name)
+
+    site=symbols.get('user_elf_exit_site',0)
+
+    require(text[0]<=site and site+4<=text[0]+text[2] and site%4==0,'Invalid user exit site')
     require(struct.unpack_from('<I',data,text[1]+site-text[0])[0]==0xd4000001,'User exit is not SVC #0')
 
     return {'entry':entry,'segments':loads,'exit_site':site}

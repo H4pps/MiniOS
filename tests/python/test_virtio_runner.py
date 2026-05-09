@@ -32,8 +32,8 @@ def sector_line(sector):
     for byte in data:checksum=((checksum^byte)*16777619)&0xffffffff
     return f'virtio: read sector={sector} checksum=0x{checksum:08x} first=0x{data[:8].hex()} last=0x{data[-8:].hex()}\r\n'.encode()
 '''
-CONSOLE=PREFIX+test_elf_loader_runner.CONSOLE.replace("    if command == b'elf':",r'''
-    if command == b'virtio':response+=virtio_report()
+CONSOLE=PREFIX+test_elf_loader_runner.CONSOLE.replace("    elif command == b'elf':",r'''
+    elif command == b'virtio':response+=virtio_report()
     elif command == b'virtio test':
         response+=virtio_report()
         if not present:response+=b'virtio: test unavailable\r\n'

@@ -17,18 +17,21 @@ def image():
 
     struct.pack_into('<HHIQQQIHHHHHH',data,16,2,183,1,0x1000000,64,0x3000,0,64,56,3,64,3,0)
 
-    for i,(address,size,memory,flags) in enumerate(((0x1000000,16,16,5),(0x1001000,14,14,4),(0x1002000,8,264,6))):
+    for i,(address,size,memory,flags) in enumerate(((0x1000000,64,64,5),(0x1001000,14,14,4),(0x1002000,8,264,6))):
         struct.pack_into('<IIQQQQQQ',data,64+i*56,1,flags,0x1000+i*4096,address,address,size,memory,4096)
 
     struct.pack_into('<I',data,0x1008,0xd4000001)
-    names=b'\0_user_start\0user_main\0user_write\0user_elf_exit_site\0'
+    names=b'\0_user_start\0user_main\0user_write\0user_elf_exit_site\0user_monotonic_time\0user_sys_info\0'
     data[0x3300:0x3300+len(names)]=names
 
-    struct.pack_into('<IIQQQQIIQQ',data,0x3040,0,2,0,0,0x3100,5*24,2,0,8,24)
+    struct.pack_into('<IIQQQQIIQQ',data,0x3040,0,2,0,0,0x3100,7*24,2,0,8,24)
     struct.pack_into('<IIQQQQIIQQ',data,0x3080,0,3,0,0,0x3300,len(names),0,0,1,0)
 
-    for i,(name,value) in enumerate((('_user_start',0x1000000),('user_main',0x1000004),('user_write',0x100000c),('user_elf_exit_site',0x1000008)),1):
+    for i,(name,value) in enumerate((('_user_start',0x1000000),('user_main',0x1000004),('user_write',0x100000c),('user_elf_exit_site',0x1000008),('user_monotonic_time',0x1000018),('user_sys_info',0x1000024)),1):
         struct.pack_into('<IBBHQQ',data,0x3100+i*24,names.index(name.encode()),0x12,0,1,value,0)
+
+    for offset,number in ((0x100c,1),(0x1018,3),(0x1024,4)):
+        struct.pack_into('<III',data,offset,0xd2800008|(number<<5),0xd4000001,0xd65f03c0)
 
     return data
 
@@ -51,6 +54,15 @@ class UserImageTests(unittest.TestCase):
             with self.assertRaises((ValueError,struct.error),msg=str(offset)):verify_user_elf.inspect(data)
 
         with self.assertRaises(ValueError):verify_user_elf.inspect(b'\x7fELF')
+
+    def test_rejects_missing_unmapped_or_incorrect_scalar_wrappers(self):
+        for symbol in (5,6):
+            for value in (0,0x1001000,0x100003c,0x1000019):
+                data=image();struct.pack_into('<Q',data,0x3100+symbol*24+8,value)
+                with self.assertRaisesRegex(ValueError,'wrapper'):verify_user_elf.inspect(data)
+        for offset in (0x1018,0x101c,0x1020,0x1024,0x1028,0x102c):
+            data=image();struct.pack_into('<I',data,offset,0)
+            with self.assertRaisesRegex(ValueError,'wrapper'):verify_user_elf.inspect(data)
 
     def test_exact_embedding_and_file_backing(self):
         user=image();data=bytearray(4096+len(user));data[:64]=user[:64]

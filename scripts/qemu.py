@@ -1437,7 +1437,7 @@ def user_test(command,timeout=10,symbols=None):
     return scenario_test(command,timeout,(("cortex-a53",1,128),("cortex-a53",4,128),("cortex-a57",1,128),("cortex-a57",8,256)),lambda memory:user_exchanges(memory,symbols))
 
 
-def elf_report_matcher(image, suite):
+def elf_report_matcher(image, suite, memory=128, timestamps=None, bracket=None):
     segments=image['segments']
     prefix=(f"\r\nelf: entry=0x{image['entry']:016x} segments={len(segments)} pages={sum(((s[0]+s[3]+4095)//4096-s[0]//4096) for s in segments)}\r\n"+
         ''.join(f"elf[{i}]: va=0x{s[0]:016x} file={s[2]} memory={s[3]} permissions={ {5:'r-x',4:'r--',6:'rw-'}[s[4]]}\r\n" for i,s in enumerate(segments))).encode()
@@ -1454,13 +1454,26 @@ def elf_report_matcher(image, suite):
 
         rest=body[len(prefix):]
 
+        samples=[]
         for _ in range(runs):
+            summary=re.match(rb'elf: syscalls OK abi=(\d+) page-size=(\d+) ram-bytes=(\d+) monotonic-ns=(\d+) elapsed-ns=(\d+)\r\n',rest)
+            if summary is None:raise ValueError('Missing or malformed scalar syscall summary')
+            abi,page,ram,first,elapsed=map(int,summary.groups())
+            if abi!=1 or page!=4096 or ram!=memory*1024*1024:
+                raise ValueError('Incorrect ABI, page size or RAM syscall value')
+            if elapsed<=0 or first+elapsed>0x7fffffffffffffff:
+                raise ValueError('Invalid monotonic timestamp or elapsed time')
+            previous=samples[-1][1] if samples else timestamps[-1][1] if timestamps else 0
+            if first<previous or (bracket and first<bracket[0]*1000):
+                raise ValueError('Monotonic timestamps decreased or precede diagnostic epoch')
+            samples.append((first,first+elapsed))
+            rest=rest[summary.end():]
             marker=b'elf: user OK\r\n'
 
             if not rest.startswith(marker):raise ValueError('Compiled ELF data, BSS, stack or syscall check failed')
 
             rest=rest[len(marker):]
-            report=re.match(rb'user: case=elf result=exit status=42 el=0 vector=8 ec=0x15 iss=0x0000000 ELR=0x([0-9a-f]{16}) FAR\(raw\)=0x([0-9a-f]{16}) SPSR=0x([0-9a-f]{16}) SP_EL0=0x([0-9a-f]{16}) ticks=([0-9]+) syscalls=2 writes=1\r\n',rest)
+            report=re.match(rb'user: case=elf result=exit status=42 el=0 vector=8 ec=0x15 iss=0x0000000 ELR=0x([0-9a-f]{16}) FAR\(raw\)=0x([0-9a-f]{16}) SPSR=0x([0-9a-f]{16}) SP_EL0=0x([0-9a-f]{16}) ticks=([0-9]+) syscalls=14 writes=2\r\n',rest)
 
             if report is None:raise ValueError('Incorrect or incomplete compiled ELF context')
 
@@ -1475,6 +1488,7 @@ def elf_report_matcher(image, suite):
 
         if rest!=terminal:raise ValueError('ELF rejection or kernel root/page/prompt restoration failed')
 
+        if timestamps is not None:timestamps.extend(samples)
         return len(body)
 
     return match
@@ -1483,6 +1497,21 @@ def elf_report_matcher(image, suite):
 def elf_exchanges(memory,image):
     yield next(uart_exchanges(memory))
     baseline=[]
+    timestamps=[]
+    bracket=[]
+
+    def diagnostics(data):
+        end=data.find(PROMPT)
+        if end<0:return None
+        body=data[:end+len(PROMPT)]
+        report=re.fullmatch(rb'\r\ndiag: el=1 mmu=on caches=off irq=on uptime-us=(\d+) timer-ticks=\d+ missed=\d+ recoveries=\d+ uart-dropped=0 pages-free=\d+ heap-free=\d+ exception-stack=0x[0-9a-f]{16}\r\nmini-os> ',body)
+        if report is None:raise ValueError('Incorrect ELF diagnostic clock bracket')
+        uptime=int(report[1])
+        if bracket and uptime<bracket[0]:raise ValueError('Diagnostic uptime decreased')
+        if timestamps and timestamps[-1][1]>(uptime+1)*1000:
+            raise ValueError('Monotonic nanoseconds exceed diagnostic clock bracket')
+        bracket[:]=[uptime]
+        return len(body)
 
     def accounting(data):
         end=data.find(PROMPT)
@@ -1507,10 +1536,14 @@ def elf_exchanges(memory,image):
         return len(body)
 
     yield from command_exchange('ELF memory baseline',b'mem',accounting)
-    yield from command_exchange('compiled ELF program',b'elf',elf_report_matcher(image,False))
+    yield from command_exchange('ELF clock before',b'diag',diagnostics)
+    yield from command_exchange('compiled ELF program',b'elf',elf_report_matcher(image,False,memory,timestamps,bracket))
+    yield from command_exchange('ELF clock after',b'diag',diagnostics)
 
     for _ in range(2):
-        yield from command_exchange('repeated ELF execution and rejection',b'elf test  ',elf_report_matcher(image,True))
+        yield from command_exchange('ELF clock before repeated runs',b'diag',diagnostics)
+        yield from command_exchange('repeated ELF execution and rejection',b'elf test  ',elf_report_matcher(image,True,memory,timestamps,bracket))
+        yield from command_exchange('ELF clock after repeated runs',b'diag',diagnostics)
         yield from command_exchange('ELF page restoration',b'mem',accounting)
 
     for payload,response in (
@@ -1630,7 +1663,7 @@ def virtio_exchanges(memory,sectors,image):
         yield from command_exchange('VirtIO retained counters',b'virtio',report(False))
         yield from command_exchange('VirtIO memory restoration',b'mem',accounting)
 
-    yield from command_exchange('ELF execution with VirtIO mapped',b'elf',elf_report_matcher(image,False))
+    yield from command_exchange('ELF execution with VirtIO mapped',b'elf',elf_report_matcher(image,False,memory))
 
     for payload,response in (
         (b'virtio x',b'\r\nusage: virtio [test]\r\n'+PROMPT),
