@@ -28,8 +28,6 @@ sequenceDiagram
     Runtime->>Runtime: Discard tables/segments/stack and verify accounting
 ```
 
-[Open the SVG](diagrams/user-execution.svg).
-
 An owned EL1 parent frame supplies the return target; a damaged user stack cannot
 choose the kernel return stack. `entry_sp` must match that parent context.
 The original TTBR0 is restored before cleanup. Cleanup halts rather than freeing
@@ -150,8 +148,6 @@ flowchart TB
     Z -.-> F
     M -.-> F
 ```
-
-[Open the SVG](diagrams/elf-load-transaction.svg).
 
 `Loaded` borrows a `LoadMemory` callback table/context until `discard`.
 Each successful allocation is recorded before initialization/mapping, allowing

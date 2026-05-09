@@ -23,8 +23,6 @@ flowchart TB
     B --> H --> R --> T --> V --> D --> L --> S
 ```
 
-[Open the SVG](diagrams/fdt-pipeline.svg).
-
 Validation covers magic, total size, version-17-compatible layout, section bounds,
 alignment/overlap, reservation termination, property names/string offsets,
 balanced nodes and final end token. `Cursor` carries a fixed 32-node stack.

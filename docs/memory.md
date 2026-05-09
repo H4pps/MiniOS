@@ -31,8 +31,6 @@ flowchart TB
     A --> V
 ```
 
-[Open the SVG](diagrams/physical-memory-ownership.svg).
-
 External reservations come from the FDT reservation table and supported static
 `/reserved-memory` children. Up to 32 coalesced ranges are retained. Overlaps
 merge conservatively: `no-map` survives the union, while a union containing
@@ -70,8 +68,6 @@ flowchart TB
     A -->|"valid release"| F
 ```
 
-[Open the SVG](diagrams/page-lifecycle.svg).
-
 `mem reclaim` releases only complete pages fully contained in supported reusable
 external ranges. Boundary pages, permanent memory and `no-map` memory remain
 reserved. Repeating reclamation is harmless. It does not free the DTB blob,
@@ -104,8 +100,6 @@ flowchart LR
     C --> E
     D --> E
 ```
-
-[Open the SVG](diagrams/heap-split-coalesce.svg).
 
 Zero-size, overflowing and exhausted requests return null. Free validates the
 header chain and exact payload start; foreign/interior pointers, double frees

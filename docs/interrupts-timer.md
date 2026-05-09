@@ -41,8 +41,6 @@ sequenceDiagram
     Vector->>Vector: Select return frame, ERET
 ```
 
-[Open the SVG](diagrams/irq-delivery.svg).
-
 Architectural spurious IDs skip EOI. Unexpected real IDs are acknowledged/EOI'd,
 reported and sent to fatal handling. Nesting stays disabled. Foreground D/A/F
 masks remain set while IRQs are normally enabled. Local `mask_irq/restore_irq`
@@ -83,8 +81,6 @@ flowchart TB
     A --> B --> C --> D --> E --> F --> G
     G --> A
 ```
-
-[Open the SVG](diagrams/timer-rearm.svg).
 
 The arithmetic is modular with comparisons limited to less than `2^63` counts
 separation. Early callbacks do not advance ticks. Delayed delivery skips elapsed

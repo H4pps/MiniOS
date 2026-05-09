@@ -18,8 +18,6 @@ flowchart TB
     E -->|"immediate character/delete echo"| W
 ```
 
-[Open the SVG](diagrams/console-input.svg).
-
 The driver receives a supplied base/clock configuration. Initialization selects
 115200 baud, 8N1, FIFO, RX/TX enabled and DMA disabled. Startup reception is
 polling. Normal boot enables RX, receive-timeout and receive-error interrupts;
@@ -76,8 +74,6 @@ flowchart TB
     T -->|"later RX error"| R
     D --> P
 ```
-
-[Open the SVG](diagrams/line-editor-states.svg).
 
 Commands are lowercase and case-sensitive. Only ASCII spaces separate names and
 arguments. Leading spaces are ignored; there is no quoting, expansion, chaining,

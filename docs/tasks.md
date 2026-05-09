@@ -25,8 +25,6 @@ flowchart LR
     R -->|"cancel"| U
 ```
 
-[Open the SVG](diagrams/task-states.svg).
-
 Slot zero cannot sleep, exit, cancel or be reaped through worker operations.
 Cancel only applies to an undispatched noncurrent worker. Reap only applies to a
 noncurrent exited worker. Modular wake deadlines require delays below `2^63`
@@ -53,8 +51,6 @@ sequenceDiagram
     Policy-->>Entry: Pointer to selected frame
     Entry->>New: Restore registers, stack, ELR, SPSR, ERET
 ```
-
-[Open the SVG](diagrams/task-context-switch.svg).
 
 Only an advanced physical-timer tick requests IRQ preemption. Ordinary UART,
 VirtIO or self-SGI delivery does not independently schedule another task.

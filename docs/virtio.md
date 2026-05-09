@@ -37,8 +37,6 @@ flowchart TB
     R --> Z --> A --> F --> O --> Q --> I --> D
 ```
 
-[Open the SVG](diagrams/virtio-initialization.svg).
-
 The [driver](../src/drivers/virtio/block.cpp) receives `Resources`, an `Io`
 callback table and `Dma` storage. The platform owns two explicitly zeroed,
 Normal non-cacheable physical pages: one for the queue and one for the request.
@@ -64,8 +62,6 @@ flowchart TB
     E["GIC EOI; foreground consumes completion"]
     H --> D --> S --> A --> U --> I --> E
 ```
-
-[Open the SVG](diagrams/virtio-read-chain.svg).
 
 Only one request is outstanding. `read` validates readiness and sector range,
 prepares the three-descriptor chain, publishes it using architecture DMA barriers

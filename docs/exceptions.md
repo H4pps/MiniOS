@@ -61,8 +61,6 @@ flowchart TB
     R -->|"no match"| F
 ```
 
-[Open the SVG](diagrams/exception-routing.svg).
-
 The precise routing priority is in
 [mini_os_exception_handler](../src/arch/aarch64/exceptions.cpp).
 An unexpected real IRQ also emits an unhandled-ID diagnostic before fatal

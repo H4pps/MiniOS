@@ -54,8 +54,6 @@ sequenceDiagram
     Secondary-->>Boot: Release-store heartbeat
 ```
 
-[Open the SVG](diagrams/secondary-startup.svg).
-
 The [platform SMP adapter](../src/platform/qemu_virt/smp.cpp) gives the boot CPU
 logical slot zero, regardless of its inventory index. Enabled secondaries map to
 other slots; disabled records stay offline. PSCI uses its supported `hvc` or `smc`
@@ -86,8 +84,6 @@ flowchart LR
     S1 -->|"acquire/release heartbeat state"| B
     S2 -->|"acquire/release heartbeat state"| B
 ```
-
-[Open the SVG](diagrams/cpu-work-ownership.svg).
 
 Startup and heartbeat verification have bounded two-second counter budgets.
 State publication and consumption use architecture acquire/release operations.

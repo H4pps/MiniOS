@@ -42,8 +42,6 @@ flowchart TB
     I -.-> X
 ```
 
-[Open the SVG](diagrams/boot-sequence.svg).
-
 The complete order is in [kernel_entry](../src/kernel/boot.cpp).
 The resource line is emitted during successful console handover; it precedes
 later device initialization and the final `mini-os: boot OK`. That success marker
@@ -70,8 +68,6 @@ flowchart TB
     F["Remaining RAM: allocator metadata and owned allocations"]
     D --> T --> R --> W --> S --> E --> P --> K --> F
 ```
-
-[Open the SVG](diagrams/boot-memory-layout.svg).
 
 Only the DTB window and image start have fixed addresses. Section boundaries,
 stack addresses and image size come from linker symbols; do not copy a current

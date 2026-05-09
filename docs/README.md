@@ -27,8 +27,6 @@ flowchart TB
     Q --> V
 ```
 
-[Open the SVG](diagrams/system-overview.svg).
-
 Only the boot CPU schedules tasks, executes user programs and owns normal device
 work. Enabled secondary CPUs start through PSCI and remain in a bounded,
 masked-interrupt heartbeat loop. CPU caches remain disabled.
@@ -50,8 +48,6 @@ flowchart TB
     D -->|"supplied MMIO resources"| H
     A -->|"instructions and system registers"| H
 ```
-
-[Open the SVG](diagrams/architecture-layers.svg).
 
 This is a responsibility diagram, not a claim that every source file compiles
 into an independent library. Platform adapters connect drivers and generic code;

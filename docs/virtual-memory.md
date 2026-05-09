@@ -20,8 +20,6 @@ flowchart TB
     V --> L1 --> L2 --> L3 --> P
 ```
 
-[Open the SVG](diagrams/page-table-walk.svg).
-
 [PageTables](../src/arch/aarch64/page_tables.cpp) borrows a `TableMemory` callback
 table for page allocation, physical access and release. It zeroes all 512 entries
 of each owned table page. `map` installs identity mappings; `map_at` supports
@@ -74,8 +72,6 @@ sequenceDiagram
     CPU->>CPU: Enable SCTLR.M with C/I disabled, ISB
     CPU->>CPU: Restore IRQ mask and verify readback
 ```
-
-[Open the SVG](diagrams/mmu-activation.svg).
 
 [arch/mmu.cpp](../src/arch/aarch64/mmu.cpp) owns barriers, TLB maintenance,
 `AT` translation instructions and sysreg writes. `switch_address_space` uses

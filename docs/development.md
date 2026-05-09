@@ -35,8 +35,6 @@ flowchart TB
     K --> I --> Q
 ```
 
-[Open the SVG](diagrams/build-products.svg).
-
 The [cross toolchain](../cmake/toolchains/aarch64-none-elf.cmake) uses CMake
 `Generic` and static-library compiler probes. Kernel options exclude hosted
 headers/linkage, exceptions, RTTI, stack protector, unwind support, dynamic
@@ -139,8 +137,6 @@ flowchart TB
     F --> C
     C -.-> R
 ```
-
-[Open the SVG](diagrams/verification-layers.svg).
 
 Host fixtures test bounded/malformed parser input, decoding, allocator policy,
 scheduler transitions, exact rendering and driver register decisions. Shared

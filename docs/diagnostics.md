@@ -60,8 +60,6 @@ flowchart LR
     S --> R --> W
 ```
 
-[Open the SVG](diagrams/diagnostic-snapshot.svg).
-
 `diag` reports EL, MMU/cache/foreground IRQ state, uptime microseconds, timer
 ticks/missed periods, controlled recovery count, UART dropped events, free pages,
 free heap payload and emergency-stack top. The snapshot reports the caller's
