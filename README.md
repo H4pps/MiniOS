@@ -907,9 +907,11 @@ counters, partial output, stdin/exit failures, deadlines, diagnostics and cleanu
   packages are pinned by `builtin-baseline`.
 - GoogleTest and [`magic_enum`](https://github.com/Neargye/magic_enum) are part of
   the host-only optional `tests` feature enabled by `BUILD_TESTING`. `magic_enum`
-  enumerates FDT, ELF and VirtIO error values to check diagnostic coverage and
-  uniqueness. Its hosted C++ headers are confined to tests; shared kernel code
-  retains explicit error strings and remains freestanding.
+  enumerates FDT, ELF, VirtIO, CPU-discovery and resource-discovery errors to check
+  diagnostic coverage and uniqueness. Shared code uses constexpr tables keyed by
+  enum values, preserving explicit messages and unknown-value fallbacks. Tables
+  reject duplicate values and empty labels at compile time; host tests check all
+  eight-bit values. Hosted C++ headers remain confined to tests.
 - Ubuntu CI has separate host and kernel jobs using LLVM 18. The host job runs
   `check-host`; the kernel job analyzes and runs boot/UART/DTB/monitor/exception
   tests, including IRQ, timer, allocator, MMU, heap, UART IRQ, recovery, performance, CPU-discovery, SMP, task, EL0, ELF-loading and VirtIO coverage, in both kernel presets.
@@ -921,7 +923,7 @@ to `mini_os_tests` in `cmake/host.cmake`. Keep hardware code in its owning layer
 and verify it under QEMU. Add vcpkg dependencies only when host features need them.
 
 The four interrupt/timekeeping/allocation/protection operations were verified
-sequentially. The test suites contain 205 host tests per configuration and
+sequentially. The test suites contain 214 host tests per configuration and
 45 CTests per kernel preset. The workflows support native macOS, ARM64 Docker,
 and emulated AMD64 Docker, including formatting, static analysis, host sanitizers,
 ELF inspection, and debug/release QEMU regressions. Normal MMU checks and

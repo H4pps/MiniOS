@@ -72,9 +72,13 @@ compiler and versioned QEMU machine, and does not bootstrap hosted libraries.
 
 Host setup bootstraps vcpkg's exact [manifest baseline](../vcpkg.json).
 GoogleTest and `magic_enum` belong to the host-only `tests` feature. Enum reflection
-checks every declared FDT, ELF and VirtIO error for a distinct, nonempty diagnostic
-instead of an unknown-value fallback. Reflection covers the full eight-bit range
-of these enums. A supplied external `VCPKG_ROOT` is preserved rather than reset.
+checks every declared FDT, ELF, VirtIO, CPU-discovery and resource-discovery error
+for a distinct, nonempty diagnostic. Shared code uses the freestanding
+[enum-text helper](../include/mini_os/enum_text.h) with constexpr tables keyed by
+explicit enum values; declaration order and gaps do not affect lookup. Compile-time
+validation rejects duplicate values and missing labels. Host tests use reflection
+over the full eight-bit range to verify coverage and original unknown-value
+fallbacks. A supplied external `VCPKG_ROOT` is preserved rather than reset.
 Kernel builds do not depend on vcpkg or hosted C++ headers.
 
 [common.sh](../scripts/common.sh) locates the project and tools.
