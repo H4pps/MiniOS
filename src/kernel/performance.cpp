@@ -20,6 +20,27 @@ bool counter_microseconds(TimerFrequency frequency, CounterWindow window, uint64
     return true;
 }
 
+bool counter_nanoseconds(TimerFrequency frequency, CounterWindow window, uint64_t &nanoseconds) {
+    const uint64_t elapsed = window.end - window.start;
+
+    if (frequency.hz == 0 || frequency.hz > UINT32_MAX || elapsed >= (1ULL << 63))
+        return false;
+
+    constexpr uint64_t scale = 1000000000;
+    constexpr uint64_t limit = INT64_MAX;
+    const auto whole = elapsed / frequency.hz;
+    const auto fraction = ((elapsed % frequency.hz) * scale) / frequency.hz;
+
+    if (whole > limit / scale)
+        nanoseconds = limit;
+    else {
+        const auto seconds = whole * scale;
+        nanoseconds = fraction > limit - seconds ? limit : seconds + fraction;
+    }
+
+    return true;
+}
+
 void render_diagnostics(TextWriter &w, const DiagnosticStats &s) {
     w.write("diag: el=");
     w.decimal(s.el);

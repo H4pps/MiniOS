@@ -12,6 +12,8 @@ struct CounterWindow {
 // Modular elapsed counts must be less than 2^63; conversion floors and saturates.
 bool counter_microseconds(TimerFrequency frequency, CounterWindow window, uint64_t &microseconds);
 
+bool counter_nanoseconds(TimerFrequency frequency, CounterWindow window, uint64_t &nanoseconds);
+
 struct DiagnosticStats {
     uint64_t uptime_us, timer_ticks, missed, recoveries, uart_dropped, pages_free, heap_free,
         exception_stack;
@@ -30,6 +32,7 @@ void render_performance(TextWriter &writer, const PerformanceStats &stats);
 
 namespace platform {
 void initialize_diagnostics();
+uint64_t monotonic_time_ns();
 void render_diagnostics(kernel::TextWriter &writer);
 void render_performance(kernel::TextWriter &writer);
 void performance_test();

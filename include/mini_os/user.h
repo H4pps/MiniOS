@@ -2,13 +2,17 @@
 #define MINI_OS_USER_H
 
 #include "mini_os/exception.h"
+#include "mini_os/memory.h"
 #include "mini_os/text_writer.h"
+#include "mini_os/user_abi.h"
 
 namespace kernel {
 constexpr size_t user_region_capacity = 8;
 constexpr uint64_t user_write_limit = 256;
 constexpr uint64_t user_bad_address = UINT64_MAX - 13;
-constexpr uint64_t user_bad_size = UINT64_MAX - 21;
+constexpr uint64_t user_invalid_argument = UINT64_MAX - 21;
+constexpr uint64_t user_bad_size = user_invalid_argument;
+constexpr uint64_t user_clock_error = UINT64_MAX - 4;
 constexpr uint64_t user_unknown_call = UINT64_MAX - 37;
 
 struct UserRegion {
@@ -37,7 +41,7 @@ class UserMemory {
     UserRegion regions_[user_region_capacity];
     size_t count_;
 };
-enum class UserCallKind : uint8_t { write, exit, rejected };
+enum class UserCallKind : uint8_t { write, exit, rejected, monotonic_time, sys_info };
 
 struct UserCall {
     UserCallKind kind;
@@ -45,10 +49,18 @@ struct UserCall {
 };
 
 struct UserRequest {
-    uint64_t number, address, length;
+    uint64_t number, argument0, argument1;
 };
 
 UserCall evaluate_user_call(const UserMemory &memory, const UserRequest &request);
+
+struct UserSystemInfo {
+    uint64_t ram_bytes;
+    MemoryStats pages;
+};
+
+uint64_t select_user_system_info(uint64_t key, const UserSystemInfo &snapshot);
+void set_user_call_result(arch::ExceptionFrame &frame, uint64_t result);
 enum class UserEnd : uint8_t { exited, fault, timed_out };
 
 struct UserResult {
@@ -103,5 +115,6 @@ UserProgram user_program(size_t index);
 
 namespace platform {
 void run_user(kernel::TextWriter &writer, bool test);
-}
+uint64_t user_system_info(uint64_t key);
+} // namespace platform
 #endif

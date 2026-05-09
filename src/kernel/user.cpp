@@ -86,12 +86,18 @@ bool UserMemory::entry(uint64_t address) const {
 }
 
 UserCall evaluate_user_call(const UserMemory &memory, const UserRequest &request) {
-    const auto number = request.number, address = request.address, length = request.length;
+    const auto number = request.number, address = request.argument0, length = request.argument1;
 
-    if (number == 2)
+    if (number == MINI_OS_SYSCALL_EXIT)
         return {UserCallKind::exit, address};
 
-    if (number != 1)
+    if (number == MINI_OS_SYSCALL_MONOTONIC_TIME)
+        return {UserCallKind::monotonic_time, 0};
+
+    if (number == MINI_OS_SYSCALL_SYS_INFO)
+        return {UserCallKind::sys_info, 0};
+
+    if (number != MINI_OS_SYSCALL_WRITE)
         return {UserCallKind::rejected, user_unknown_call};
 
     if (length > user_write_limit)
@@ -101,6 +107,31 @@ UserCall evaluate_user_call(const UserMemory &memory, const UserRequest &request
         return {UserCallKind::rejected, user_bad_address};
 
     return {UserCallKind::write, length};
+}
+
+uint64_t select_user_system_info(uint64_t key, const UserSystemInfo &snapshot) {
+    switch (key) {
+    case MINI_OS_SYS_INFO_ABI_VERSION:
+        return 1;
+    case MINI_OS_SYS_INFO_PAGE_SIZE:
+        return page_size;
+    case MINI_OS_SYS_INFO_RAM_BYTES:
+        return snapshot.ram_bytes;
+    case MINI_OS_SYS_INFO_TOTAL_PAGES:
+        return snapshot.pages.total;
+    case MINI_OS_SYS_INFO_FREE_PAGES:
+        return snapshot.pages.free;
+    case MINI_OS_SYS_INFO_ALLOCATED_PAGES:
+        return snapshot.pages.allocated;
+    case MINI_OS_SYS_INFO_RESERVED_PAGES:
+        return snapshot.pages.reserved;
+    default:
+        return user_invalid_argument;
+    }
+}
+
+void set_user_call_result(arch::ExceptionFrame &frame, uint64_t result) {
+    frame.registers[0] = result;
 }
 
 void render_user_result(TextWriter &w, const UserResult &r) {

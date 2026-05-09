@@ -2,6 +2,7 @@
 #include "mini_os/elf.h"
 #include "mini_os/memory.h"
 #include "mini_os/mmu.h"
+#include "mini_os/performance.h"
 #include "mini_os/platform.h"
 #include "mini_os/tasks.h"
 #include "mini_os/timer.h"
@@ -252,7 +253,7 @@ arch::ExceptionFrame *handle_user_exception(arch::ExceptionFrame &frame, bool ti
 
     ++result.syscalls;
     const auto address = frame.registers[0], length = frame.registers[1];
-    const auto call = evaluate_user_call(memory, {frame.registers[8], address, length});
+    auto call = evaluate_user_call(memory, {frame.registers[8], address, length});
 
     if (call.kind == UserCallKind::exit)
         return finish(frame, UserEnd::exited, call.result);
@@ -274,7 +275,12 @@ arch::ExceptionFrame *handle_user_exception(arch::ExceptionFrame &frame, bool ti
             ++result.writes;
     }
 
-    frame.registers[0] = call.result;
+    if (call.kind == UserCallKind::monotonic_time)
+        call.result = platform::monotonic_time_ns();
+    else if (call.kind == UserCallKind::sys_info)
+        call.result = platform::user_system_info(address);
+
+    set_user_call_result(frame, call.result);
 
     return &frame;
 }
@@ -359,7 +365,7 @@ void run_elf(TextWriter &writer, bool test, UserBootResources boot, elf::Bytes i
 
         if (valid) {
             valid = execute({"elf", loaded.entry(), 0}) && result.end == UserEnd::exited &&
-                    result.status == 42 && result.syscalls == 2 && result.writes == 1;
+                    result.status == 42 && result.syscalls == 14 && result.writes == 2;
 
             if (returned)
                 render_user_result(writer, result);

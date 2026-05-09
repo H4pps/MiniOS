@@ -4,14 +4,32 @@
 #include "mini_os/memory.h"
 #include "mini_os/recovery.h"
 #include "mini_os/serial_queue.h"
+#include "mini_os/user.h"
 
 namespace {
 uint64_t boot_counter = 0;
+bool clock_initialized = false;
 constinit kernel::PerformanceStats last{};
 } // namespace
 
 namespace platform {
-void initialize_diagnostics() { boot_counter = arch::measurement_counter(); }
+void initialize_diagnostics() {
+    if (!clock_initialized) {
+        boot_counter = arch::measurement_counter();
+        clock_initialized = true;
+    }
+}
+
+uint64_t monotonic_time_ns() {
+    if (!clock_initialized)
+        return kernel::user_clock_error;
+
+    const auto timer = timer_stats();
+    uint64_t timestamp = 0;
+    return kernel::counter_nanoseconds({timer.frequency}, {boot_counter, timer.counter}, timestamp)
+               ? timestamp
+               : kernel::user_clock_error;
+}
 
 void render_diagnostics(kernel::TextWriter &writer) {
     const auto flags = arch::mask_irq();
