@@ -197,7 +197,7 @@ Use the corresponding custom/container build root when applicable.
 [fdt_edit.py](../scripts/fdt_edit.py) and [embed_elf.py](../scripts/embed_elf.py)
 produce bounded test/build artifacts rather than hosted kernel dependencies.
 
-The verified local baseline is 202 host tests per configuration and 45 CTests
+The verified local baseline is 220 host tests per configuration and 45 CTests
 per kernel preset, passing native macOS, ARM64 Docker and emulated AMD64 Docker.
 A green fake-process fixture alone does not prove hardware behavior; a compiled
 kernel alone does not prove boot.

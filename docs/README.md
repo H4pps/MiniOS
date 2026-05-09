@@ -110,7 +110,7 @@ SMP scheduling, a general process model, filesystems and block writes are not
 implemented. The ELF example is compiled and embedded at build time; there is
 no disk-based executable lookup.
 
-Local native, ARM64 Docker and emulated AMD64 verification passes 202 host tests
+Local native, ARM64 Docker and emulated AMD64 verification passes 220 host tests
 per configuration and 45 CTests per kernel preset. Actual remote GitHub Actions
 verification remains pending. These totals are a verified baseline, not a promise
 that a future edit retains the same number of tests.

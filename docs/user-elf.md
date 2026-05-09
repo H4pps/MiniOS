@@ -70,12 +70,52 @@ lower-AArch64 synchronous context and exact SVC syndrome.
 | --- | --- | --- |
 | 1: write | x0 address, x1 length | Byte count, at most 256 bytes per call |
 | 2: exit | x0 exit status | Terminates the example; no EL0 return |
+| 3: monotonic time | None | Nanoseconds since the diagnostic boot epoch |
+| 4: system information | x0 information key | Current scalar value, or unsigned `-22` for unknown keys |
 | Other | Any | Unsigned encoding of `-38`, unknown call |
 
 Oversized writes return unsigned `-22`; invalid nonempty spans return unsigned
 `-14`. Zero-length writes are valid and do not increment the nonempty-write
-counter. There are no file descriptors, read syscall, filesystem, signals, fork
-or general process table.
+counter. Oversized-write rejection takes precedence over address validation;
+exit ignores x1. Time/information calls ignore unused arguments and return
+through the same saved frame, changing only x0. The 200 ms watchdog still runs.
+
+The assembly-safe [public header](../include/mini_os/user_abi.h) supplies call
+numbers, named information keys and C/C++ declarations:
+
+```c
+uint64_t user_write(const char *bytes, uint64_t size);
+uint64_t user_monotonic_time(void);
+uint64_t user_sys_info(uint64_t key);
+```
+
+| Key constant (`MINI_OS_SYS_INFO_` prefix) | Value | Meaning |
+| --- | --- | --- |
+| `ABI_VERSION` | 1 | ABI version, currently 1 |
+| `PAGE_SIZE` | 2 | Physical page size, 4096 bytes |
+| `RAM_BYTES` | 3 | Discovered RAM extent in bytes |
+| `TOTAL_PAGES` | 4 | Physical pages tracked by the allocator |
+| `FREE_PAGES` | 5 | Currently free physical pages |
+| `ALLOCATED_PAGES` | 6 | Currently allocated physical pages |
+| `RESERVED_PAGES` | 7 | Currently reserved physical pages |
+
+Each information call reads a live snapshot; allocations for the running user
+image, stack and private page tables are included. There is no user-buffer
+copying. Keys 0, `UINT64_MAX` and every other unknown key return unsigned `-22`.
+The accounting identity is `total = free + allocated + reserved`.
+
+Time uses the diagnostic boot-counter origin, initialized once and shared with
+`diag` uptime. [The converter](../src/kernel/performance.cpp) splits modular
+elapsed counts into whole seconds and a fractional remainder using only 64-bit
+integer arithmetic. Frequencies 1 through `UINT32_MAX` and elapsed windows below
+2^63 counts are supported; fractional nanoseconds are floored. Successful values
+saturate at `INT64_MAX`, leaving the upper unsigned range for errors. Invalid or
+uninitialized clock state returns unsigned `-5`. Counter resolution determines
+precision: equal consecutive timestamps are valid. User execution never resets
+the epoch. Architecture counter reads remain privileged.
+
+These are mini-os calls, with no Linux or POSIX binary compatibility. There are
+no file descriptors, read syscall, filesystem, signals, fork or general process table.
 
 `user` runs the built-in demo. `user test` additionally checks breakpoint,
 undefined instruction, unmapped/readonly/kernel-access faults, a spinning
@@ -121,8 +161,22 @@ are explicitly zeroed. Private page tables are separately discarded.
 ## Compiled example and embedding
 
 [User C++](../src/user/demo.cpp) verifies initialized data, zeroed BSS and stack
-contents, writes `elf: user OK`, and returns 42.
-[User startup](../src/user/aarch64/start.S) implements write/exit SVCs;
+contents, samples time around all seven information queries and bounded work,
+checks version/page/RAM/accounting and rejected keys, then prints:
+
+```text
+elf: syscalls OK abi=1 page-size=4096 ram-bytes=134217728 monotonic-ns=123456000 elapsed-ns=64000
+elf: user OK
+```
+
+Values for time vary per run; 256 MiB runs report RAM bytes as 268435456.
+Each line uses allocation-free integer formatting and one write of at most
+256 bytes. Successful execution makes exactly 14 calls: two timestamps, seven
+valid information queries, two invalid keys, two writes and exit with status 42.
+The built-in assembly demo remains at seven calls and one nonempty write.
+
+[User startup](../src/user/aarch64/start.S) implements exit and the
+write/time/information wrappers;
 [its linker](../src/user/aarch64/user.ld) keeps RX/RO/RW segments in the fixed
 example pages.
 
@@ -134,5 +188,11 @@ page/root accounting. No disk or persistent file is read by this command.
 Verification: [user_test](../tests/user_test.cpp), [elf_test](../tests/elf_test.cpp),
 `kernel.user`, `kernel.elf_loader` and `kernel.user_elf`. The latter
 [verifier](../scripts/verify_user_elf.py) compares compiled and embedded bytes,
-segment policy and entry layout. Separate fake-process modules test malformed
-reports, leaks, deadlines and cleanup.
+segment policy, entry layout and exact `mov x8` / `svc #0` / `ret` instructions.
+Host tests cover conversion rounding, wrap, saturation, failure-output preservation,
+information selection, classification and saved-register preservation. The ELF
+runner checks nondecreasing timestamps across runs, positive workload duration,
+RAM/ABI/page values and exact call/write counts. `diag` uptime brackets verify
+nanosecond units and the shared epoch on A53/A57 with 128/256 MiB RAM. Separate
+fake-process modules test fragmented summaries, wrong scalar values, decreasing
+or out-of-bracket time, wrong counts, leaks, deadlines and cleanup.
