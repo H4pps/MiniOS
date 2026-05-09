@@ -200,16 +200,12 @@ kernel alone does not prove boot.
 
 ## Maintaining these guides and diagrams
 
-Each diagram's Mermaid block includes a unique `%% diagram: name` comment.
-Checked-in SVGs provide a static alternative without a Mermaid-enabled viewer.
-The optional [diagram tool](../scripts/doc_diagrams.py) checks export freshness
-with only Python:
+Diagrams are maintained as Mermaid blocks in the Markdown guides and display
+in viewers with Mermaid support. Each block includes a unique
+`%% diagram: name` comment. SVG exports are optional local artifacts.
 
-```sh
-python3 scripts/doc_diagrams.py --check
-```
-
-For regeneration, install Mermaid CLI 11.12.0 in a temporary directory or use an
+The optional [diagram tool](../scripts/doc_diagrams.py) can render SVGs when an
+export is needed. Install Mermaid CLI 11.12.0 in a temporary directory or use an
 existing installation, then supply its `mmdc` executable. It is not a kernel,
 host-build or CI dependency:
 
@@ -218,10 +214,18 @@ npm install --prefix /tmp/mini-os-diagrams --no-audit --no-fund @mermaid-js/merm
 python3 scripts/doc_diagrams.py --mmdc /tmp/mini-os-diagrams/node_modules/.bin/mmdc
 ```
 
-Add `--diagram name` to render only a changed diagram; the final freshness\ncheck still covers every export.\n\nIf using an already installed Chrome instead of bundled Chromium, pass
-`--puppeteer-config /path/to/config.json` with its `executablePath`.
-The [Mermaid CLI documentation](https://github.com/mermaid-js/mermaid-cli/blob/master/docs/already-installed-chromium.md)
+After rendering all diagrams, check the local exports with only Python:
+
+```sh
+python3 scripts/doc_diagrams.py --check
+```
+
+Add `--diagram name` to update one export after the initial full render; the
+freshness check still covers every export. If using an already installed Chrome
+instead of bundled Chromium, pass `--puppeteer-config /path/to/config.json`
+with its `executablePath`. The [Mermaid CLI documentation](https://github.com/mermaid-js/mermaid-cli/blob/master/docs/already-installed-chromium.md)
 describes that configuration.
 
-Update the guide, regenerate affected diagrams, validate links and review SVGs
-when interfaces change. Distinguish implemented behavior from unimplemented features. Use focused Conventional Commits; leave `.gitignore` untouched.
+When interfaces change, update the guide and Mermaid blocks and validate links.
+Distinguish implemented behavior from unimplemented features. Use focused
+Conventional Commits; leave `.gitignore` untouched.

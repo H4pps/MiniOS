@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render documented Mermaid diagrams, or check committed SVG freshness."""
+"""Render documented Mermaid diagrams, or check local SVG export freshness."""
 
 import argparse
 import hashlib
